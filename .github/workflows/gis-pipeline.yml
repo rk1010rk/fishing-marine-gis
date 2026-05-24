@@ -23,10 +23,17 @@ jobs:
         gdalinfo --version
         echo "✅ GDAL installed"
     
+    - name: Create tile directory
+      run: mkdir -p app/static/tiles
+    
     - name: Generate test tile
       run: |
         python3 << 'PYTHON'
         from PIL import Image
+        import os
+        
+        # ディレクトリ確認
+        os.makedirs('app/static/tiles', exist_ok=True)
         
         # Test tile 生成（1色）
         img = Image.new('RGB', (256, 256), color=(155, 211, 255))
