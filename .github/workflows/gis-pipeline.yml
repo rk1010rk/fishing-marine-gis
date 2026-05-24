@@ -1,0 +1,43 @@
+name: GIS Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  generate-tiles:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install GDAL
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gdal-bin python3-gdal
+    
+    - name: Test GDAL
+      run: |
+        gdalinfo --version
+        echo "✅ GDAL installed"
+    
+    - name: Generate test tile
+      run: |
+        python3 << 'PYTHON'
+        import numpy as np
+        from PIL import Image
+        
+        # Test tile 生成（1色）
+        img = Image.new('RGB', (256, 256), color=(155, 211, 255))
+        img.save('app/static/tiles/test-tile.png')
+        print("✅ Test tile generated")
+        PYTHON
+    
+    - name: Commit and push
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git add app/static/tiles/
+        git commit -m "Generate tiles" || echo "No changes to commit"
+        git push
