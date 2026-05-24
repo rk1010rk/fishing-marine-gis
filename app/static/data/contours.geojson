@@ -1,0 +1,105 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "depth": 10,
+        "contour_type": "isobath",
+        "description": "水深10m等深線"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            139.6,
+            35.35
+          ],
+          [
+            139.7,
+            35.35
+          ],
+          [
+            139.8,
+            35.35
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "depth": 20,
+        "contour_type": "isobath",
+        "description": "水深20m等深線"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            139.6,
+            35.3
+          ],
+          [
+            139.7,
+            35.3
+          ],
+          [
+            139.8,
+            35.3
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "depth": 50,
+        "contour_type": "isobath",
+        "description": "水深50m等深線"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            139.6,
+            35.2
+          ],
+          [
+            139.7,
+            35.2
+          ],
+          [
+            139.8,
+            35.2
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "depth": 100,
+        "contour_type": "isobath",
+        "description": "水深100m等深線"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            139.6,
+            35.1
+          ],
+          [
+            139.7,
+            35.1
+          ],
+          [
+            139.8,
+            35.1
+          ]
+        ]
+      }
+    }
+  ]
+}

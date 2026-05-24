@@ -1,0 +1,119 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "横浜沖砂地",
+        "bottom_type": "砂",
+        "depth_range": "15-30m",
+        "fish_species": "ヒラメ、シーバス"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.62, 35.4],
+          [139.68, 35.4],
+          [139.68, 35.45],
+          [139.62, 35.45],
+          [139.62, 35.4]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "相模湾中部岩盤",
+        "bottom_type": "岩盤",
+        "depth_range": "20-40m",
+        "fish_species": "メバル、カサゴ"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.68, 35.35],
+          [139.75, 35.35],
+          [139.75, 35.42],
+          [139.68, 35.42],
+          [139.68, 35.35]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "相模川河口泥地",
+        "bottom_type": "泥",
+        "depth_range": "5-15m",
+        "fish_species": "アジ、イワシ"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.6, 35.43],
+          [139.65, 35.43],
+          [139.65, 35.48],
+          [139.6, 35.48],
+          [139.6, 35.43]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "浦賀水道岩盤",
+        "bottom_type": "岩盤",
+        "depth_range": "10-25m",
+        "fish_species": "メバル、ベラ"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.72, 35.1],
+          [139.78, 35.1],
+          [139.78, 35.16],
+          [139.72, 35.16],
+          [139.72, 35.1]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "東京湾内泥地",
+        "bottom_type": "泥",
+        "depth_range": "5-20m",
+        "fish_species": "アジ、スズキ"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.7, 35.15],
+          [139.82, 35.15],
+          [139.82, 35.3],
+          [139.7, 35.3],
+          [139.7, 35.15]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "東京湾口砂地",
+        "bottom_type": "砂",
+        "depth_range": "15-35m",
+        "fish_species": "ヒラメ、シーバス"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.72, 35.08],
+          [139.85, 35.08],
+          [139.85, 35.14],
+          [139.72, 35.14],
+          [139.72, 35.08]
+        ]]
+      }
+    }
+  ]
+}

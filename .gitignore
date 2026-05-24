@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Database
+*.db
+*.sqlite3
+
+# Environment
+.env
+
+# GIS generated files
+gis/processed/
+gis/output/
+
+# Tiles
+app/static/tiles/
+
+# OS
+.DS_Store
+Thumbs.db

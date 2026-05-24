@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#007bff">
+    <meta name="description" content="GPS追跡対応の釣り用海図・釣果記録アプリ">
+    
+    <title>Fishing Map - 釣り用海図</title>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"><\/script>
+
+    
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+    
+    <!-- MapLibre GL JS -->
+    <script src='https://unpkg.com/maplibre-gl@4.0.0/dist/maplibre-gl.js'></script>
+    <link href='https://unpkg.com/maplibre-gl@4.0.0/dist/maplibre-gl.css' rel='stylesheet' />
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+        .tab-btn {
+            padding: 8px 12px;
+            background: #e9ecef;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .tab-btn.active {
+            background: #007bff;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .date-group {
+            margin-bottom: 15px;
+        }
+        .date-header {
+            background: #f0f0f0;
+            padding: 8px;
+            font-weight: bold;
+            border-radius: 3px;
+            margin-bottom: 8px;
+        }
+        .gps-buttons {
+            display: flex;
+            gap: 5px;
+            margin: 10px 0;
+        }
+        .gps-btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .gps-start {
+            background: #28a745;
+            color: white;
+        }
+        .gps-stop {
+            background: #dc3545;
+            color: white;
+        }
+        .status-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 8px 12px;
+            font-size: 12px;
+            z-index: 9999;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .status-bar.online {
+            background: #28a745;
+            color: white;
+        }
+        .status-bar.offline {
+            background: #dc3545;
+            color: white;
+        }
+        body {
+            padding-top: 32px;
+        }
+        .form-section {
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+        }
+        .form-section-title {
+            font-weight: bold;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <!-- ステータスバー -->
+    <div id="statusBar" class="status-bar online">
+        <span id="statusText">🟢 Online</span>
+        <span id="pendingCount"></span>
+    </div>
+    
+    <div id="map"></div>
+    
+    <div class="controls">
+        <h1>🎣 Fishing Map</h1>
+        <p id="click-info">地図をクリックしてポイント追加</p>
+        
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('input')">📍 ポイント入力</button>
+            <button class="tab-btn" onclick="switchTab('list')">📋 釣行記録</button>
+        </div>
+        
+        <div id="input-tab" class="tab-content active">
+            <div class="gps-buttons">
+                <button class="gps-btn gps-start" onclick="startGPSTracking()">開始</button>
+                <button class="gps-btn gps-stop" onclick="stopGPSTracking()">停止</button>
+            </div>
+            
+            <!-- 基本情報 -->
+            <div class="form-section">
+                <div class="form-section-title">🐟 釣果情報</div>
+                <input type="text" id="fishType" placeholder="魚種">
+                <input type="number" id="catchCount" placeholder="釣果数" min="0">
+                <input type="text" id="catchSize" placeholder="サイズ（例: 35cm）">
+            </div>
+            
+            <!-- 釣り場情報 -->
+            <div class="form-section">
+                <div class="form-section-title">📍 釣り場情報</div>
+                <input type="text" id="fishingSpot" placeholder="釣り場・船宿">
+                <input type="number" id="waterDepth" placeholder="水深(m)" step="0.1">
+                <select id="bottomType">
+                    <option value="">-- 底質 --</option>
+                    <option value="砂">砂</option>
+                    <option value="泥">泥</option>
+                    <option value="岩盤">岩盤</option>
+                    <option value="ゴロタ">ゴロタ</option>
+                    <option value="藻場">藻場</option>
+                </select>
+            </div>
+            
+            <!-- ルアー情報 -->
+            <div class="form-section">
+                <div class="form-section-title">🎣 ルアー情報</div>
+                <input type="text" id="lureName" placeholder="ルアー名">
+                <input type="number" id="lureWeight" placeholder="重さ(g)" step="1" min="1">
+                <input type="text" id="lureColor" placeholder="カラー">
+            </div>
+            
+            <!-- 環境情報 -->
+            <div class="form-section">
+                <div class="form-section-title">⛅ 環境情報</div>
+                <select id="weather">
+                    <option value="">-- 天気 --</option>
+                    <option value="晴">晴</option>
+                    <option value="曇">曇</option>
+                    <option value="雨">雨</option>
+                </select>
+                
+                <input type="time" id="timeOfDay" placeholder="時刻">
+                
+                <select id="tideName">
+                    <option value="">-- 潮 --</option>
+                    <option value="大潮">大潮</option>
+                    <option value="中潮">中潮</option>
+                    <option value="小潮">小潮</option>
+                    <option value="長潮">長潮</option>
+                </select>
+            </div>
+            
+            <!-- メモ -->
+            <div class="form-section">
+                <input type="text" id="memo" placeholder="メモ">
+            </div>
+            
+            <button id="saveBtn" disabled>保存</button>
+            <button id="cancelBtn" style="background: #6c757d;">キャンセル</button>
+        </div>
+        
+        <div id="list-tab" class="tab-content">
+            <div id="pointList"></div>
+        </div>
+    </div>
+    
+    <!-- IndexedDB オフラインキュー -->
+    <script src="{{ url_for('static', filename='js/offline-queue.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/bathymetry-renderer.js') }}"></script>
+    
+    <!-- MapLibre 用メインアプリ -->
+    <script src="{{ url_for('static', filename='js/map.js') }}"></script>
+    
+    <!-- Service Worker 登録 -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/sw.js')
+                .then(() => console.log('✅ Service Worker 登録成功'))
+                .catch(err => console.error('Service Worker 登録失敗:', err));
+        }
+    </script>
+</body>
+</html>

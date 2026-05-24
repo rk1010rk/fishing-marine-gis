@@ -1,0 +1,23 @@
+{
+  "name": "Fishing Map - 釣り用海図",
+  "short_name": "Fishing Map",
+  "description": "GPS追跡対応の釣り用海図・釣果記録アプリ",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#007bff",
+  "background_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
