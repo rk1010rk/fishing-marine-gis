@@ -1,3 +1,3 @@
-from app.models.point import db, FishingPoint, GPSTrack
+from .point import db, FishingPoint, GPSTrack
 
 __all__ = ['db', 'FishingPoint', 'GPSTrack']

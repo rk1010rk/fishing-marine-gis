@@ -189,3 +189,16 @@ function switchTab(tab) {
     
     console.log('✅ 地図初期化完了');
 })();
+
+// ===== Bathymetry Renderer 初期化 =====
+window.addEventListener('load', async () => {
+    try {
+        if (typeof BathymetryRenderer !== 'undefined') {
+            bathymetryRenderer = new BathymetryRenderer(map);
+            await bathymetryRenderer.load();
+            console.log('✅ Bathymetry renderer initialized');
+        }
+    } catch (e) {
+        console.error('❌ Bathymetry init failed:', e);
+    }
+});
