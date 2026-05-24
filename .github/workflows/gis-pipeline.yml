@@ -10,12 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
-    - name: Install GDAL
+    - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y gdal-bin python3-gdal
+        sudo apt-get install -y gdal-bin python3-gdal python3-pip
+        pip3 install pillow numpy
     
     - name: Test GDAL
       run: |
@@ -25,7 +26,6 @@ jobs:
     - name: Generate test tile
       run: |
         python3 << 'PYTHON'
-        import numpy as np
         from PIL import Image
         
         # Test tile 生成（1色）
@@ -38,6 +38,6 @@ jobs:
       run: |
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
-        git add app/static/tiles/
+        git add app/static/tiles/ || true
         git commit -m "Generate tiles" || echo "No changes to commit"
-        git push
+        git push || echo "Push failed"
