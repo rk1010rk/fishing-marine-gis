@@ -168,10 +168,10 @@ document.getElementById('cancelBtn').addEventListener('click', function() {
     document.getElementById('click-info').textContent = '地図をクリックしてポイント追加';
 });
 
-function switchTab(tab) {
+function switchTab(tab, element) {
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-    event.target.classList.add('active');
+    element.classList.add('active');
     document.getElementById(tab + '-tab').classList.add('active');
 }
 
