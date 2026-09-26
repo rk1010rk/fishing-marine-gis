@@ -17,6 +17,8 @@ import jp.tasklock.core.model.VerificationMethod
 import jp.tasklock.core.model.VerificationPolicy
 import jp.tasklock.core.model.VerificationStatus
 import jp.tasklock.core.model.bestStatus
+import jp.tasklock.core.policy.ChangePolicy
+import jp.tasklock.core.policy.ChangeResult
 import jp.tasklock.core.template.TaskTemplate
 import jp.tasklock.core.time.DayBoundary
 import jp.tasklock.core.verify.ReadingCheck
@@ -45,7 +47,14 @@ data class TodayState(
     val tasks: List<TaskProgress>,
     val lockedApps: List<LockedAppEntity>,
     val grant: UnlockGrant?,
-)
+) {
+    /** 画面表示用。変更可否の最終判定は Repository が DB から行う */
+    val locked: Boolean get() = lockedApps.isNotEmpty() && grant == null
+
+    val studyPackages: Set<String> get() = ChangePolicy.studyPackages(tasks.map { it.task })
+
+    val hasSelfReportTask: Boolean get() = tasks.any { ChangePolicy.isSelfReportable(it.task) }
+}
 
 /** タスク完了画面に渡す入力。タスク種別により使うフィールドが異なる */
 data class CompletionInput(
@@ -63,6 +72,8 @@ sealed interface CompletionResult {
 class TaskLockRepository(
     private val db: AppDatabase,
     private val usageStats: UsageStatsReader,
+    /** 実行時点のホーム・電話・設定・自アプリ。既定アプリの変更に追従するため毎回問い合わせる */
+    private val exemptPackages: () -> Set<String>,
     scope: CoroutineScope,
     private val clock: Clock = Clock.systemDefaultZone(),
 ) {
@@ -110,47 +121,67 @@ class TaskLockRepository(
     }
 
     // ---- タスク設定 ----
+    // 可否判定は ChangePolicy（:core）に集約し、ここでは DB の現在状態をトランザクション内で読んで渡す。
+    // メモリ上の blockSnapshot は起動直後に空のため、変更可否の判定には使わない。
 
-    suspend fun addTask(template: TaskTemplate, title: String, target: Int, targetPackage: String?): Long =
-        db.taskDao().insert(
-            Task(
-                templateId = template.id,
-                title = title,
-                category = template.category,
-                unit = template.unit,
-                targetValue = target,
-                verificationPolicy = template.policy,
-                requiredStatus = template.requiredStatus,
-                targetPackage = targetPackage,
-                createdAt = clock.instant(),
-            ).toEntity(),
+    suspend fun addTask(template: TaskTemplate, title: String, target: Int, targetPackage: String?): ChangeResult {
+        val task = Task(
+            templateId = template.id,
+            title = title,
+            category = template.category,
+            unit = template.unit,
+            targetValue = target,
+            verificationPolicy = template.policy,
+            requiredStatus = template.requiredStatus,
+            targetPackage = targetPackage,
+            createdAt = clock.instant(),
         )
+        return db.withTransaction {
+            val result = ChangePolicy.canAddTask(
+                locked = isLockedNow(),
+                activeTasks = activeTasks(),
+                newTask = task,
+                lockedPackages = db.lockedAppDao().getPackages().toSet(),
+            )
+            if (result == ChangeResult.Ok) db.taskDao().insert(task.toEntity())
+            result
+        }
+    }
 
     suspend fun getTask(id: Long): Task? = db.taskDao().getById(id)?.toModel()
 
-    /** ロック中に削除すると簡単に回避できてしまうため、解除中のみ許可する */
-    suspend fun deactivateTask(id: Long): Boolean {
-        if (isLockedNow()) return false
-        db.taskDao().deactivate(id)
-        return true
+    suspend fun deactivateTask(id: Long): ChangeResult = db.withTransaction {
+        val result = ChangePolicy.canRemoveTask(isLockedNow(), activeTasks(), id)
+        if (result == ChangeResult.Ok) db.taskDao().deactivate(id)
+        result
     }
 
     // ---- ロック対象アプリ ----
 
-    suspend fun addLockedApp(packageName: String, label: String) =
-        db.lockedAppDao().insert(LockedAppEntity(packageName, label, clock.millis()))
-
-    /** 追加はいつでも可能。外すのは解除中のみ（ロック中に外せると意味がないため） */
-    suspend fun removeLockedApp(packageName: String): Boolean {
-        if (isLockedNow()) return false
-        db.lockedAppDao().delete(packageName)
-        return true
+    /** 追加は制限を強める方向なのでロック中でも可 */
+    suspend fun addLockedApp(packageName: String, label: String): ChangeResult {
+        val exempt = exemptPackages()
+        return db.withTransaction {
+            val result = ChangePolicy.canLockApp(packageName, activeTasks(), exempt)
+            if (result == ChangeResult.Ok) db.lockedAppDao().insert(LockedAppEntity(packageName, label, clock.millis()))
+            result
+        }
     }
 
-    fun isLockedNow(): Boolean {
-        val snap = blockSnapshot.value
-        return snap.lockedPackages.isNotEmpty() && snap.grant?.isActiveAt(clock.instant()) != true
+    suspend fun removeLockedApp(packageName: String): ChangeResult = db.withTransaction {
+        val result = ChangePolicy.canUnlockApp(isLockedNow())
+        if (result == ChangeResult.Ok) db.lockedAppDao().delete(packageName)
+        result
     }
+
+    /** DB の現在状態から判定する（ロック対象が1つ以上あり、有効な解除記録が無い） */
+    suspend fun isLockedNow(): Boolean =
+        BlockSnapshot(
+            lockedPackages = db.lockedAppDao().getPackages().toSet(),
+            grant = db.unlockGrantDao().getLatest()?.toModel(),
+        ).isLockedAt(clock.instant())
+
+    private suspend fun activeTasks(): List<Task> = db.taskDao().getActive().map { it.toModel() }
 
     // ---- 完了 → 検証 → 解除 ----
 

@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
                 )
                 Screen.TaskSetup -> TaskSetupScreen(
                     vm = vm,
+                    today = today,
                     usageAccessGranted = permissions.usageAccessGranted,
                     onOpenUsageSettings = { startActivity(appContainer().usageStats.settingsIntent()) },
                     onDone = { screen = Screen.Home },
@@ -100,6 +101,8 @@ class MainActivity : ComponentActivity() {
                 Screen.LockedApps -> LockedAppsScreen(
                     vm = vm,
                     lockedPackages = today?.lockedApps?.map { it.packageName }?.toSet().orEmpty(),
+                    studyPackages = today?.studyPackages.orEmpty(),
+                    locked = today?.locked == true,
                     accessibilityEnabled = permissions.accessibilityEnabled,
                     onEnableBlocking = {
                         disclosureReturnTo = true

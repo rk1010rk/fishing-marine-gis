@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import jp.tasklock.app.TaskLockApp
 import jp.tasklock.app.ui.BlockActivity
+import jp.tasklock.core.lock.BlockDebouncer
 import java.time.Instant
 
 /**
@@ -17,10 +18,9 @@ import java.time.Instant
  */
 class AppLockAccessibilityService : AccessibilityService() {
 
-    private val repository by lazy { (application as TaskLockApp).container.repository }
-
-    private var lastBlockedPackage: String? = null
-    private var lastBlockedAt = 0L
+    private val container by lazy { (application as TaskLockApp).container }
+    private val repository by lazy { container.repository }
+    private val debouncer = BlockDebouncer()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -31,15 +31,10 @@ class AppLockAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
-        if (pkg == packageName) return
 
-        if (!repository.blockSnapshot.value.shouldBlock(pkg, Instant.now())) return
-
-        // 1つのアプリ起動で複数のウィンドウイベントが連続するため、短時間の重複起動を抑止する
-        val now = SystemClock.elapsedRealtime()
-        if (pkg == lastBlockedPackage && now - lastBlockedAt < DEBOUNCE_MS) return
-        lastBlockedPackage = pkg
-        lastBlockedAt = now
+        // 自アプリ（ブロック画面）やホームのイベントも debouncer に渡し、間引き状態をリセットさせる
+        val block = pkg != packageName && shouldBlock(pkg)
+        if (!debouncer.onWindowEvent(pkg, block, SystemClock.elapsedRealtime())) return
 
         startActivity(
             Intent(this, BlockActivity::class.java)
@@ -48,9 +43,12 @@ class AppLockAccessibilityService : AccessibilityService() {
         )
     }
 
-    override fun onInterrupt() = Unit
-
-    private companion object {
-        const val DEBOUNCE_MS = 700L
+    private fun shouldBlock(pkg: String): Boolean {
+        val snapshot = repository.blockSnapshot.value
+        // ロック対象でなければ PackageManager への問い合わせをせずに終える
+        if (pkg !in snapshot.lockedPackages) return false
+        return snapshot.shouldBlock(pkg, Instant.now(), container.installedApps.exemptPackages())
     }
+
+    override fun onInterrupt() = Unit
 }

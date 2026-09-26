@@ -67,10 +67,20 @@ data class BlockSnapshot(
     val lockedPackages: Set<String>,
     val grant: UnlockGrant?,
 ) {
-    fun shouldBlock(packageName: String, now: Instant): Boolean {
+    /**
+     * @param exemptPackages 実行時点のホーム・電話・自アプリ等。ロック対象に登録済みでも決してブロックしない
+     *   （登録後に既定のホーム/電話アプリが変わった場合への備え）
+     */
+    fun shouldBlock(packageName: String, now: Instant, exemptPackages: Set<String> = emptySet()): Boolean {
         if (packageName !in lockedPackages) return false
-        return grant?.isActiveAt(now) != true
+        if (packageName in exemptPackages) return false
+        return !isUnlockedAt(now)
     }
+
+    /** ロック対象があり、かつ有効な解除記録が無ければロック中 */
+    fun isLockedAt(now: Instant): Boolean = lockedPackages.isNotEmpty() && !isUnlockedAt(now)
+
+    private fun isUnlockedAt(now: Instant): Boolean = grant?.isActiveAt(now) == true
 
     companion object {
         val EMPTY = BlockSnapshot(emptySet(), null)

@@ -24,5 +24,5 @@ class AppContainer(app: Application) {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val usageStats = UsageStatsReader(app)
     val installedApps = InstalledApps(app)
-    val repository = TaskLockRepository(AppDatabase.build(app), usageStats, appScope)
+    val repository = TaskLockRepository(AppDatabase.build(app), usageStats, installedApps::exemptPackages, appScope)
 }

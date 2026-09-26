@@ -27,11 +27,16 @@ import androidx.compose.ui.unit.dp
 import jp.tasklock.app.platform.AppInfo
 import jp.tasklock.app.ui.MainViewModel
 
-/** ロック対象アプリの選択。ロック中は「外す」操作が拒否される（Repository 側で制御） */
+/**
+ * ロック対象アプリの選択。
+ * ロック中は「外す」操作、学習アプリに設定中のアプリの選択はできない（最終判定は Repository 側）
+ */
 @Composable
 fun LockedAppsScreen(
     vm: MainViewModel,
     lockedPackages: Set<String>,
+    studyPackages: Set<String>,
+    locked: Boolean,
     accessibilityEnabled: Boolean,
     onEnableBlocking: () -> Unit,
     onDone: () -> Unit,
@@ -66,12 +71,17 @@ fun LockedAppsScreen(
         } else {
             items(list, key = { it.packageName }) { app ->
                 val checked = app.packageName in lockedPackages
+                val isStudyApp = app.packageName in studyPackages
+                val enabled = if (checked) !locked else !isStudyApp
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().clickable { vm.setLocked(app, !checked) },
+                    modifier = Modifier.fillMaxWidth().clickable(enabled = enabled) { vm.setLocked(app, !checked) },
                 ) {
-                    Checkbox(checked = checked, onCheckedChange = { vm.setLocked(app, it) })
-                    Text(app.label)
+                    Checkbox(checked = checked, enabled = enabled, onCheckedChange = { vm.setLocked(app, it) })
+                    Column {
+                        Text(app.label)
+                        if (isStudyApp) Text("学習アプリに設定中", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }

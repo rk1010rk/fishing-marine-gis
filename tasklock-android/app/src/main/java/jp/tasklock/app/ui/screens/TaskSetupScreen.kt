@@ -32,9 +32,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import jp.tasklock.app.data.TodayState
 import jp.tasklock.app.platform.AppInfo
 import jp.tasklock.app.ui.MainViewModel
 import jp.tasklock.core.model.VerificationPolicy
+import jp.tasklock.core.policy.ChangePolicy
+import jp.tasklock.core.policy.ChangeRejection
 import jp.tasklock.core.template.TaskTemplate
 import jp.tasklock.core.template.TaskTemplates
 
@@ -42,6 +45,7 @@ import jp.tasklock.core.template.TaskTemplates
 @Composable
 fun TaskSetupScreen(
     vm: MainViewModel,
+    today: TodayState?,
     usageAccessGranted: Boolean,
     onOpenUsageSettings: () -> Unit,
     onDone: () -> Unit,
@@ -54,6 +58,7 @@ fun TaskSetupScreen(
     } else {
         TaskForm(
             vm = vm,
+            today = today,
             template = template,
             usageAccessGranted = usageAccessGranted,
             onOpenUsageSettings = onOpenUsageSettings,
@@ -85,6 +90,7 @@ private fun TemplateList(onSelect: (TaskTemplate) -> Unit, modifier: Modifier) {
 @Composable
 private fun TaskForm(
     vm: MainViewModel,
+    today: TodayState?,
     template: TaskTemplate,
     usageAccessGranted: Boolean,
     onOpenUsageSettings: () -> Unit,
@@ -98,13 +104,25 @@ private fun TaskForm(
     var apps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     val needsApp = template.policy == VerificationPolicy.APP_USAGE
 
-    LaunchedEffect(needsApp) { if (needsApp) apps = vm.launchableApps() }
+    val lockedPackages = today?.lockedApps?.map { it.packageName }?.toSet().orEmpty()
+    // 自動確認タスクは、自己申告で解除できるタスクがすでにある場合だけ追加できる（計測不能での永久ロック防止）
+    val needsSelfReportFirst = !ChangePolicy.isSelfReportable(template.requiredStatus) && today?.hasSelfReportTask != true
+
+    // ロック対象のアプリは学習アプリの候補から外す（開けないため計測できない）
+    LaunchedEffect(needsApp, lockedPackages) {
+        if (needsApp) apps = vm.launchableApps().filter { it.packageName !in lockedPackages }
+    }
 
     val targetValue = target.toIntOrNull()?.takeIf { it > 0 }
-    val canSave = title.isNotBlank() && targetValue != null && (!needsApp || (studyApp != null && usageAccessGranted))
+    val canSave = !needsSelfReportFirst && title.isNotBlank() && targetValue != null &&
+        (!needsApp || (studyApp != null && usageAccessGranted))
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         Text(template.title, style = MaterialTheme.typography.headlineSmall)
+        if (needsSelfReportFirst) {
+            Spacer(Modifier.height(8.dp))
+            Text(ChangeRejection.NEEDS_SELF_REPORTED_TASK.message, color = MaterialTheme.colorScheme.error)
+        }
         Spacer(Modifier.height(16.dp))
         OutlinedTextField(title, { title = it }, label = { Text("タスク名") }, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
@@ -145,8 +163,7 @@ private fun TaskForm(
         Spacer(Modifier.height(24.dp))
         Button(
             onClick = {
-                vm.addTask(template, title.trim(), targetValue ?: return@Button, studyApp?.packageName)
-                onSaved()
+                vm.addTask(template, title.trim(), targetValue ?: return@Button, studyApp?.packageName, onSaved)
             },
             enabled = canSave,
             modifier = Modifier.fillMaxWidth(),

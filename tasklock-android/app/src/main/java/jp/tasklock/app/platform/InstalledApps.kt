@@ -17,7 +17,7 @@ class InstalledApps(private val context: Context) {
 
     fun launchableApps(): List<AppInfo> {
         val pm = context.packageManager
-        val excluded = excludedPackages()
+        val excluded = exemptPackages()
         return query(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER))
             .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
             .filter { (pkg, _) -> pkg !in excluded }
@@ -31,7 +31,11 @@ class InstalledApps(private val context: Context) {
         pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
     }.getOrDefault(packageName)
 
-    private fun excludedPackages(): Set<String> {
+    /**
+     * ロックしてはいけないパッケージ。選択時だけでなく、ブロック判定時（実行時）にも使う。
+     * 既定のホーム/電話アプリはロック設定後に変わりうるため、呼ぶたびに問い合わせる。
+     */
+    fun exemptPackages(): Set<String> {
         val homes = query(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME))
             .map { it.activityInfo.packageName }
         val dialer = context.getSystemService(TelecomManager::class.java)?.defaultDialerPackage

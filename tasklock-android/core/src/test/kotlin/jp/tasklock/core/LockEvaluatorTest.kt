@@ -80,6 +80,30 @@ class LockEvaluatorTest {
     }
 
     @Test
+    fun `self-report task unlocks even when the verified task could not be measured`() {
+        // D2: 資格（VERIFIED、計測不能で UNVERIFIED）＋ 読書（SELF_REPORTED）なら読書で解除できる
+        val cert = task(1, VerificationStatus.VERIFIED, VerificationPolicy.APP_USAGE)
+        val reading = task(2, VerificationStatus.SELF_REPORTED)
+        val d = evaluator.evaluate(
+            rule, day, listOf(cert, reading),
+            listOf(completion(10, 1), completion(11, 2)),
+            listOf(verification(10, VerificationStatus.UNVERIFIED), verification(11, VerificationStatus.SELF_REPORTED)),
+        )
+        assertEquals(UnlockDecision.Unlock(11, Instant.parse("2026-09-26T15:00:00Z")), d)
+    }
+
+    @Test
+    fun `verified task is never downgraded to self report`() {
+        // VERIFIED 必須タスクに自己申告の検証が付いても解除されない（自動フォールバックしない）
+        val cert = task(1, VerificationStatus.VERIFIED, VerificationPolicy.APP_USAGE)
+        val d = evaluator.evaluate(
+            rule, day, listOf(cert), listOf(completion(10, 1)),
+            listOf(verification(10, VerificationStatus.SELF_REPORTED)),
+        )
+        assertEquals(UnlockDecision.StayLocked(UnlockDecision.Reason.VERIFICATION_INSUFFICIENT), d)
+    }
+
+    @Test
     fun `yesterday's completion does not unlock today`() {
         val d = evaluator.evaluate(
             rule, day, listOf(task(1, VerificationStatus.SELF_REPORTED)),

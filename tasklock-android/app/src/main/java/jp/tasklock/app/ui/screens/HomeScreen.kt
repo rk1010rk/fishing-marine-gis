@@ -61,11 +61,25 @@ fun HomeScreen(
                 Text("まずは毎日やるタスクを1つ決めましょう", style = MaterialTheme.typography.bodyLarge)
             }
         }
+        // ロック中は解除条件を変えられない（タスクが0件のときの追加だけは可能）
+        val canEditTasks = !today.locked
         items(today.tasks, key = { it.task.id }) { progress ->
-            TaskCard(progress, onComplete = { onCompleteTask(progress.task.id) }, onDelete = { onDeleteTask(progress.task.id) })
+            TaskCard(
+                progress,
+                canDelete = canEditTasks,
+                onComplete = { onCompleteTask(progress.task.id) },
+                onDelete = { onDeleteTask(progress.task.id) },
+            )
         }
         item {
-            OutlinedButton(onClick = onAddTask, modifier = Modifier.fillMaxWidth()) { Text("タスクを追加") }
+            val canAdd = canEditTasks || today.tasks.isEmpty()
+            OutlinedButton(onClick = onAddTask, enabled = canAdd, modifier = Modifier.fillMaxWidth()) { Text("タスクを追加") }
+            if (!canAdd) {
+                Text(
+                    "ロック中はタスクの追加・削除ができません。今日のタスクを終えると変更できます。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Spacer(Modifier.height(16.dp))
         }
     }
@@ -109,7 +123,7 @@ private fun LockStatusCard(
 }
 
 @Composable
-private fun TaskCard(progress: TaskProgress, onComplete: () -> Unit, onDelete: () -> Unit) {
+private fun TaskCard(progress: TaskProgress, canDelete: Boolean, onComplete: () -> Unit, onDelete: () -> Unit) {
     val task = progress.task
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -118,7 +132,7 @@ private fun TaskCard(progress: TaskProgress, onComplete: () -> Unit, onDelete: (
                     Text(task.title, style = MaterialTheme.typography.titleMedium)
                     Text("目標: ${task.targetValue}${task.unit.label}", style = MaterialTheme.typography.bodyMedium)
                 }
-                TextButton(onClick = onDelete) { Text("削除") }
+                TextButton(onClick = onDelete, enabled = canDelete) { Text("削除") }
             }
             Spacer(Modifier.height(8.dp))
             if (progress.completedToday) {

@@ -10,6 +10,7 @@ import jp.tasklock.app.data.TodayState
 import jp.tasklock.app.platform.AccessibilityStatus
 import jp.tasklock.app.platform.AppInfo
 import jp.tasklock.core.model.Task
+import jp.tasklock.core.policy.ChangeResult
 import jp.tasklock.core.template.TaskTemplate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,24 +51,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     suspend fun launchableApps(): List<AppInfo> = withContext(Dispatchers.IO) { container.installedApps.launchableApps() }
 
-    fun addTask(template: TaskTemplate, title: String, target: Int, targetPackage: String?) {
-        viewModelScope.launch { repository.addTask(template, title, target, targetPackage) }
+    /** 保存できた場合のみ [onSaved] を呼ぶ。拒否された場合は理由をメッセージで表示する */
+    fun addTask(template: TaskTemplate, title: String, target: Int, targetPackage: String?, onSaved: () -> Unit) {
+        viewModelScope.launch {
+            val result = repository.addTask(template, title, target, targetPackage)
+            if (result == ChangeResult.Ok) onSaved() else report(result)
+        }
     }
 
     fun deactivateTask(id: Long) {
-        viewModelScope.launch {
-            if (!repository.deactivateTask(id)) _message.value = "ロック中はタスクを削除できません。今日のタスクを終えてから変更してください"
-        }
+        viewModelScope.launch { report(repository.deactivateTask(id)) }
     }
 
     fun setLocked(app: AppInfo, locked: Boolean) {
         viewModelScope.launch {
-            if (locked) {
-                repository.addLockedApp(app.packageName, app.label)
-            } else if (!repository.removeLockedApp(app.packageName)) {
-                _message.value = "ロック中は対象から外せません。今日のタスクを終えてから変更してください"
-            }
+            report(
+                if (locked) repository.addLockedApp(app.packageName, app.label)
+                else repository.removeLockedApp(app.packageName),
+            )
         }
+    }
+
+    private fun report(result: ChangeResult) {
+        if (result is ChangeResult.Rejected) _message.value = result.reason.message
     }
 
     suspend fun getTask(id: Long): Task? = repository.getTask(id)

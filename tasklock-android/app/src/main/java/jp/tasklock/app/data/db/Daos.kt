@@ -66,6 +66,9 @@ interface LockedAppDao {
     @Query("SELECT * FROM locked_apps ORDER BY label")
     fun observeAll(): Flow<List<LockedAppEntity>>
 
+    @Query("SELECT packageName FROM locked_apps")
+    suspend fun getPackages(): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(app: LockedAppEntity)
 
@@ -80,6 +83,9 @@ interface UnlockGrantDao {
 
     @Query("SELECT * FROM unlock_grants WHERE day = :day ORDER BY expiresAt DESC LIMIT 1")
     suspend fun latestForDay(day: String): UnlockGrantEntity?
+
+    @Query("SELECT * FROM unlock_grants ORDER BY expiresAt DESC LIMIT 1")
+    suspend fun getLatest(): UnlockGrantEntity?
 
     /** 日付をまたいでも有効期限で判定できるよう、日付に依らず最新のものを監視する */
     @Query("SELECT * FROM unlock_grants ORDER BY expiresAt DESC LIMIT 1")
