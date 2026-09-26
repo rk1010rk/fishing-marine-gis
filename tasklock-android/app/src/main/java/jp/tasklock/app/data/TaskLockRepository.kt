@@ -90,13 +90,13 @@ class TaskLockRepository(
     }
 
     /**
-     * アクセシビリティサービスが同期的に参照するスナップショット。
-     * 起動直後の読み込み完了までは EMPTY（=ブロックしない）になる。
+     * アクセシビリティサービスが参照するスナップショット。
+     * **null は「DB から未ロード」**であり「ロック対象なし」ではない。初回ロード後は null に戻らない。
      */
-    val blockSnapshot: StateFlow<BlockSnapshot> =
+    val blockSnapshot: StateFlow<BlockSnapshot?> =
         combine(db.lockedAppDao().observeAll(), db.unlockGrantDao().observeLatest()) { apps, grant ->
             BlockSnapshot(apps.map { it.packageName }.toSet(), grant?.toModel())
-        }.stateIn(scope, SharingStarted.Eagerly, BlockSnapshot.EMPTY)
+        }.stateIn(scope, SharingStarted.Eagerly, null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val todayState: Flow<TodayState> = currentDay.flatMapLatest { day ->
@@ -122,7 +122,7 @@ class TaskLockRepository(
 
     // ---- タスク設定 ----
     // 可否判定は ChangePolicy（:core）に集約し、ここでは DB の現在状態をトランザクション内で読んで渡す。
-    // メモリ上の blockSnapshot は起動直後に空のため、変更可否の判定には使わない。
+    // メモリ上の blockSnapshot は起動直後に未ロードのため、変更可否の判定には使わない。
 
     suspend fun addTask(template: TaskTemplate, title: String, target: Int, targetPackage: String?): ChangeResult {
         val task = Task(

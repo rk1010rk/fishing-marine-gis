@@ -81,8 +81,4 @@ data class BlockSnapshot(
     fun isLockedAt(now: Instant): Boolean = lockedPackages.isNotEmpty() && !isUnlockedAt(now)
 
     private fun isUnlockedAt(now: Instant): Boolean = grant?.isActiveAt(now) == true
-
-    companion object {
-        val EMPTY = BlockSnapshot(emptySet(), null)
-    }
 }
