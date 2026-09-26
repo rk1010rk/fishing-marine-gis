@@ -30,7 +30,10 @@ jobs:
           java-version: '17'
 
       # ルートの settings が :app（AGP）も含むため、:core のテストでも Android SDK が必要
+      # 既定値の "tools" パッケージは配布終了しており失敗するため、platform-tools のみ指定する
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
 
       - uses: gradle/actions/setup-gradle@v4
 
@@ -57,6 +60,8 @@ jobs:
           java-version: '17'
 
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
 
       - uses: gradle/actions/setup-gradle@v4
 
