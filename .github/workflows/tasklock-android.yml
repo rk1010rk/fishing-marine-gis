@@ -1,0 +1,76 @@
+# TaskLock（tasklock-android/）の検証用ビルド。
+# :core の単体テストと :app のデバッグビルドを別ジョブにし、結果を分けて確認できるようにする。
+name: TaskLock Android
+
+on:
+  push:
+    branches: [ claude/smartphone-addiction-android-mvp-krank7 ]
+    paths:
+      - 'tasklock-android/**'
+      - '.github/workflows/tasklock-android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: tasklock-android
+
+jobs:
+  core-test:
+    name: ":core unit tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # ルートの settings が :app（AGP）も含むため、:core のテストでも Android SDK が必要
+      # 既定値の "tools" パッケージは配布終了しており失敗するため、platform-tools のみ指定する
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Run :core tests
+        run: ./gradlew :core:test --console=plain --stacktrace
+
+      - name: Upload :core test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-test-reports
+          path: tasklock-android/core/build/reports/tests/test
+          if-no-files-found: ignore
+
+  app-build:
+    name: ":app assembleDebug"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug --console=plain --stacktrace
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tasklock-debug-apk
+          path: tasklock-android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

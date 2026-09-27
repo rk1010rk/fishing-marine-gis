@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    必要最小限の設定:
+    - 受け取るのはウィンドウ遷移イベントのみ（どのアプリが前面に来たか）
+    - canRetrieveWindowContent=false: 画面内のテキスト等は一切読まない
+    - 障害者支援ツールではないため isAccessibilityTool=false（Play ポリシー上、アプリ内での明示的な開示と同意が必要）
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/accessibility_description"
+    android:isAccessibilityTool="false"
+    android:notificationTimeout="100"
+    tools:ignore="UnusedAttribute" />

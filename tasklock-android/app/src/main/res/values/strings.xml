@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">タスクロック</string>
+    <string name="accessibility_service_label">タスクロック（アプリのロック）</string>
+    <string name="accessibility_description">ロック対象に選んだアプリが前面に表示されたことを検知し、今日のタスクが終わるまでブロック画面を表示します。取得するのは表示中のアプリの種類（パッケージ名）のみで、画面の内容や入力した文字は読み取りません。取得した情報は端末の外へ送信しません。</string>
+</resources>

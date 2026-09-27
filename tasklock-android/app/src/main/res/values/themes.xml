@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 画面はすべて Compose で描画する。ここはウィンドウ背景等のための最小限の定義 -->
+    <style name="Theme.TaskLock" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
