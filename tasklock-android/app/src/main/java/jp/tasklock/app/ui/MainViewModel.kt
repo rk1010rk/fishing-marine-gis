@@ -49,7 +49,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _message.value = null
     }
 
-    suspend fun launchableApps(): List<AppInfo> = withContext(Dispatchers.IO) { container.installedApps.launchableApps() }
+    suspend fun launchableApps(includeDefaultSms: Boolean = false): List<AppInfo> =
+        withContext(Dispatchers.IO) { container.installedApps.launchableApps(includeDefaultSms) }
 
     /** 保存できた場合のみ [onSaved] を呼ぶ。拒否された場合は理由をメッセージで表示する */
     fun addTask(template: TaskTemplate, title: String, target: Int, targetPackage: String?, onSaved: () -> Unit) {
