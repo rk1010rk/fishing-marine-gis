@@ -19,6 +19,9 @@ import jp.tasklock.core.model.VerificationStatus
 import jp.tasklock.core.model.bestStatus
 import jp.tasklock.core.policy.ChangePolicy
 import jp.tasklock.core.policy.ChangeResult
+import jp.tasklock.core.policy.LockNotice
+import jp.tasklock.core.policy.LockSelection
+import jp.tasklock.core.policy.LockSelectionDiff
 import jp.tasklock.core.template.TaskTemplate
 import jp.tasklock.core.time.DayBoundary
 import jp.tasklock.core.verify.ReadingCheck
@@ -157,22 +160,38 @@ class TaskLockRepository(
     }
 
     // ---- ロック対象アプリ ----
+    // 画面のチェックは下書きで、DB に書き込むのは applyLockSelection だけ（DESIGN.md §9.6-6）。
 
-    /** 追加は制限を強める方向なのでロック中でも可 */
-    suspend fun addLockedApp(packageName: String, label: String): ChangeResult {
+    /**
+     * 確定された変更をまとめて反映する。[added] は追加するパッケージとその表示名、[removed] は外すパッケージ。
+     * トランザクション内で DB の現在状態を読み直し、反映前の状態で全件を判定する。
+     * 1件でも拒否されたら何も書き込まずに最初の拒否を返す（全件反映か、何もしないかのどちらか）。
+     */
+    suspend fun applyLockSelection(added: Map<String, String>, removed: Set<String>): ChangeResult {
         val exempt = exemptPackages()
         return db.withTransaction {
-            val result = ChangePolicy.canLockApp(packageName, activeTasks(), exempt)
-            if (result == ChangeResult.Ok) db.lockedAppDao().insert(LockedAppEntity(packageName, label, clock.millis()))
+            val current = db.lockedAppDao().getPackages().toSet()
+            // 画面を開いている間に DB が変わっていても、実際に変わる分だけを判定・反映する
+            val diff = LockSelectionDiff(added = added.keys - current, removed = removed intersect current)
+            val result = LockSelection.canApply(diff, isLockedNow(), activeTasks(), exempt)
+            if (result == ChangeResult.Ok) {
+                diff.removed.forEach { db.lockedAppDao().delete(it) }
+                diff.added.forEach { pkg ->
+                    db.lockedAppDao().insert(LockedAppEntity(pkg, added.getValue(pkg), clock.millis()))
+                }
+            }
             result
         }
     }
 
-    suspend fun removeLockedApp(packageName: String): ChangeResult = db.withTransaction {
-        val result = ChangePolicy.canUnlockApp(isLockedNow())
-        if (result == ChangeResult.Ok) db.lockedAppDao().delete(packageName)
-        result
-    }
+    /** 確認画面の「ロックに関する注意」。表示用で、反映の可否は [applyLockSelection] が改めて判定する */
+    suspend fun previewLockNotice(diff: LockSelectionDiff): LockNotice =
+        LockSelection.notice(
+            saved = db.lockedAppDao().getPackages().toSet(),
+            diff = diff,
+            grant = db.unlockGrantDao().getLatest()?.toModel(),
+            now = clock.instant(),
+        )
 
     /** DB の現在状態から判定する（ロック対象が1つ以上あり、有効な解除記録が無い） */
     suspend fun isLockedNow(): Boolean =
