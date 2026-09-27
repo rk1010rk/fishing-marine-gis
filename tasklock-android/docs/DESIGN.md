@@ -369,6 +369,19 @@ Phase 1 の実装（`1c7fb40`）は凍結済みとし、本節の変更は **仕
 3. 単体テスト: `./gradlew :core:test`
 4. USB デバッグを有効にした実機を接続し、`app` を Run（または `./gradlew :app:installDebug`）
 
+### CI のデバッグ APK の署名（2026-09-27 固定）
+- **背景:** 以前の CI は、実行ごとに作られる使い捨てのデバッグ鍵で署名していた。そのため別の実行の APK へは上書き更新できない（CI run #5 の APK を `adb install -r` → `INSTALL_FAILED_UPDATE_INCOMPATIBLE`）
+- **方式:** 固定のデバッグ鍵（PKCS12、エイリアス `androiddebugkey`、パスワードは Android 標準のデバッグ用の値）を GitHub Secret `TASKLOCK_DEBUG_KEYSTORE_B64`（Base64）に保管する。app-build ジョブはビルド前に、この鍵を既定の場所（`~/.android/debug.keystore`）へ置く。`build.gradle.kts` は変更しない
+- **検証:** ビルド前に鍵の証明書を、ビルド後に APK の証明書を、それぞれ期待値の SHA-256 と照合する。一致しなければジョブを失敗させる。Secret が未登録の場合も失敗させる（使い捨ての鍵で署名した APK を作らない）。ログに出すのは証明書の SHA-256 だけで、Secret と鍵の中身は出さない
+- **期待値（固定鍵の証明書 SHA-256）:** `1e6152d6125d65401b2e65d47eda4c11e7af93708c2bfc0e58ab55d3dde9e090`（`CN=Android Debug, O=Android, C=US`、有効期限 2054-02-12）
+- **適用範囲:** app-build ジョブのみ（core-test は対象外）
+- **鍵の保管:** 原本は開発用 PC の `~/.android/debug.keystore`。デバッグ鍵のため、別のバックアップは作らない。失った場合は新しい鍵に切り替え、Secret と期待値を更新して、端末のアプリを再インストールする。Play 公開用の鍵は別に作り、この鍵を流用しない
+- **手元でのビルド:** 同じ鍵を `~/.android/debug.keystore` に置けば、手元でビルドした APK と CI の APK は相互に上書き更新できる
+- **移行前の端末の状態（Pixel 9a、2026-09-27 確認）:**
+  - インストール済み APK の証明書 SHA-256: `b87d73954741b8ee0bb1c80a24d275d479c82fb83c2c454f2c8c57257d546a09`（`CN=Android Debug`。CI の使い捨て鍵）
+  - CI run #2 の APK との照合: **未実施**
+  - 以前の鍵は回収できない（run #2 のアーティファクトは APK とテストレポートだけで、ランナーは破棄済み）。そのため、固定鍵の版へ移行するには一度アンインストールが必要で、アプリのデータは消える
+
 ### A. 初回セットアップ
 1. アプリを開く → 「ブロック機能がオフです」が表示される
 2. 「オンにする」→ 開示画面 → 「同意して設定を開く」→ ユーザー補助で「タスクロック」をオン

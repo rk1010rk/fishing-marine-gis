@@ -51,6 +51,9 @@ jobs:
   app-build:
     name: ":app assembleDebug"
     runs-on: ubuntu-latest
+    env:
+      # 固定デバッグ鍵の証明書 SHA-256（公開情報）。CI の APK がこれと一致しなければ失敗させる
+      EXPECTED_CERT_SHA256: 1e6152d6125d65401b2e65d47eda4c11e7af93708c2bfc0e58ab55d3dde9e090
     steps:
       - uses: actions/checkout@v4
 
@@ -65,8 +68,55 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # 実行ごとに作られる使い捨てのデバッグ鍵ではなく、Secret の固定鍵で署名する（DESIGN.md §10「CI のデバッグ APK の署名」）
+      # AGP は既定の場所のデバッグ鍵を使うため、build.gradle.kts は変更しない
+      # Secret の値・復号した鍵はログに出さない（set -x や echo をしない）
+      - name: Restore fixed debug keystore
+        env:
+          DEBUG_KEYSTORE_B64: ${{ secrets.TASKLOCK_DEBUG_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DEBUG_KEYSTORE_B64}" ]; then
+            echo "::error::Secret TASKLOCK_DEBUG_KEYSTORE_B64 is not set; refusing to sign with a throwaway debug key"
+            exit 1
+          fi
+          keystore_dir="${ANDROID_USER_HOME:-$HOME/.android}"
+          mkdir -p "$keystore_dir"
+          printf '%s' "$DEBUG_KEYSTORE_B64" | base64 -d > "$keystore_dir/debug.keystore"
+          chmod 600 "$keystore_dir/debug.keystore"
+          # 鍵ファイルの証明書（公開情報）だけを確認する。Secret の誤登録をビルド前に検出するため
+          actual=$(keytool -list -v -keystore "$keystore_dir/debug.keystore" -storepass android -alias androiddebugkey \
+            | sed -n 's/^[[:space:]]*SHA256:[[:space:]]*//p' | tr -d ':' | tr 'A-F' 'a-f')
+          echo "Keystore certificate SHA-256: ${actual}"
+          if [ "$actual" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::Keystore certificate SHA-256 does not match the expected value ${EXPECTED_CERT_SHA256}"
+            exit 1
+          fi
+
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --console=plain --stacktrace
+
+      # 生成した APK が固定鍵で署名されていることを確認する。一致しなければジョブを失敗させる
+      - name: Verify APK signing certificate
+        run: |
+          set -euo pipefail
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/debug/*.apk)
+          if [ "${#apks[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one debug APK, found ${#apks[@]}"
+            exit 1
+          fi
+          certs=$("$apksigner" verify --print-certs "${apks[0]}")
+          signers=$(printf '%s\n' "$certs" | grep -c '^Signer #[0-9]* certificate SHA-256 digest:' || true)
+          actual=$(printf '%s\n' "$certs" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          echo "APK: ${apks[0]}"
+          echo "APK signer count: ${signers}"
+          echo "APK certificate SHA-256: ${actual}"
+          if [ "$signers" -ne 1 ] || [ "$actual" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::APK signing certificate does not match the expected value ${EXPECTED_CERT_SHA256}"
+            exit 1
+          fi
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
