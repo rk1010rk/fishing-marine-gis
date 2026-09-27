@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
+import android.net.Uri
 import android.os.Build
 import android.provider.Telephony
 import android.telecom.TelecomManager
@@ -56,6 +57,14 @@ class InstalledApps(private val context: Context) {
 
     /** 既定の SMS アプリ。SMS 非対応の端末などで取得できない場合は null */
     fun defaultSmsPackage(): String? = Telephony.Sms.getDefaultSmsPackage(context)
+
+    /** `smsto:` を受け取れるアプリ（重要アプリの判定用、§9.6-3）。呼ぶたびに問い合わせ、保存しない */
+    fun smsHandlerPackages(): Set<String> =
+        query(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:"))).mapTo(mutableSetOf()) { it.activityInfo.packageName }
+
+    /** `geo:` を受け取れるアプリ（重要アプリの判定用、§9.6-3）。呼ぶたびに問い合わせ、保存しない */
+    fun geoHandlerPackages(): Set<String> =
+        query(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0"))).mapTo(mutableSetOf()) { it.activityInfo.packageName }
 
     private fun query(intent: Intent): List<ResolveInfo> {
         val pm = context.packageManager

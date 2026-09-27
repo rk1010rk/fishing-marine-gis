@@ -49,10 +49,14 @@ fun LockConfirmScreen(
     val labels = savedLabels + draft?.labels.orEmpty()
     fun labelsOf(packages: Set<String>) = packages.map { labels[it] ?: it }.sorted()
 
-    var notice by remember { mutableStateOf<LockNotice?>(null) }
-    LaunchedEffect(diff) { notice = vm.previewLockNotice(diff) }
-    // 重要なアプリの判定（smsto:・geo:・固定リスト）は項目3で実装する。項目6では欄だけを用意する
-    val importantApps = emptyList<String>()
+    // 判定結果は diff ごとに持ち直す（差分が変わったとき、古い判定結果が新しい差分と混ざらないように）
+    var notice by remember(diff) { mutableStateOf<LockNotice?>(null) }
+    var importantApps by remember(diff) { mutableStateOf<List<String>?>(null) }
+    LaunchedEffect(diff) {
+        notice = vm.previewLockNotice(diff)
+        // 重要なアプリの判定（§9.6-3: smsto:・geo:・固定リスト）。追加するアプリだけが対象
+        importantApps = labelsOf(vm.importantApps(diff))
+    }
     var applying by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -67,9 +71,10 @@ fun LockConfirmScreen(
                 if (diff.removed.isNotEmpty()) Text("外すアプリ: " + labelsOf(diff.removed).joinToString("、"))
             }
 
-            if (importantApps.isNotEmpty()) {
+            val important = importantApps.orEmpty()
+            if (important.isNotEmpty()) {
                 Section(title = "重要なアプリに関する警告") {
-                    importantApps.forEach { Text("$it: このアプリは連絡・移動に使用される可能性があります") }
+                    important.forEach { Text("$it: このアプリは連絡・移動に使用される可能性があります") }
                 }
             }
 
@@ -91,7 +96,7 @@ fun LockConfirmScreen(
                     // 拒否されたときは理由がメッセージで表示され、下書きは残る
                     vm.applyConfirmedLockSelection(onApplied = onApplied, onRejected = { applying = false })
                 },
-                enabled = draft != null && !applying && notice != null,
+                enabled = draft != null && !applying && notice != null && importantApps != null, // 判定が終わるまで確定できない
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("確定") }
             OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("戻って修正する") }
