@@ -41,7 +41,10 @@ import jp.tasklock.core.policy.ChangeRejection
 import jp.tasklock.core.template.TaskTemplate
 import jp.tasklock.core.template.TaskTemplates
 
-/** テンプレートを選び、目標値（と学習アプリ）を決めるだけの1画面 */
+/**
+ * テンプレートを選び、目標値（と学習アプリ）を決めるだけの1画面。
+ * [intro] は初回利用時の案内（ロック対象を選ぶ前にタスクを決める。DESIGN.md §9.6-6）
+ */
 @Composable
 fun TaskSetupScreen(
     vm: MainViewModel,
@@ -50,11 +53,12 @@ fun TaskSetupScreen(
     onOpenUsageSettings: () -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
+    intro: String? = null,
 ) {
     var selected by remember { mutableStateOf<TaskTemplate?>(null) }
     val template = selected
     if (template == null) {
-        TemplateList(onSelect = { selected = it }, modifier = modifier)
+        TemplateList(intro = intro, onSelect = { selected = it }, modifier = modifier)
     } else {
         TaskForm(
             vm = vm,
@@ -70,11 +74,12 @@ fun TaskSetupScreen(
 }
 
 @Composable
-private fun TemplateList(onSelect: (TaskTemplate) -> Unit, modifier: Modifier) {
+private fun TemplateList(intro: String?, onSelect: (TaskTemplate) -> Unit, modifier: Modifier) {
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        if (intro != null) item { Text(intro, style = MaterialTheme.typography.bodyLarge) }
         item { Text("どんなタスクにしますか？", style = MaterialTheme.typography.headlineSmall) }
         items(TaskTemplates.MVP, key = { it.id }) { t ->
             Card(modifier = Modifier.fillMaxWidth().clickable { onSelect(t) }) {

@@ -24,6 +24,7 @@ import jp.tasklock.app.platform.AccessibilityStatus
 import jp.tasklock.app.ui.screens.AccessibilityDisclosureScreen
 import jp.tasklock.app.ui.screens.CompleteScreen
 import jp.tasklock.app.ui.screens.HomeScreen
+import jp.tasklock.app.ui.screens.LockConfirmScreen
 import jp.tasklock.app.ui.screens.LockedAppsScreen
 import jp.tasklock.app.ui.screens.TaskSetupScreen
 import jp.tasklock.app.ui.theme.TaskLockTheme
@@ -31,9 +32,14 @@ import jp.tasklock.app.ui.theme.TaskLockTheme
 /** 画面遷移。MVPでは画面数が少ないためナビゲーションライブラリは使わない */
 private sealed interface Screen {
     data object Home : Screen
-    data object TaskSetup : Screen
+
+    /** [thenLockedApps]: 有効なタスクが0件でロック対象の画面を開こうとした場合。保存後にロック対象の画面へ進む */
+    data class TaskSetup(val thenLockedApps: Boolean = false) : Screen
     data class Complete(val taskId: Long) : Screen
     data object LockedApps : Screen
+
+    /** ロック対象の追加を反映する直前の確認画面（DESIGN.md §9.6-6） */
+    data object LockConfirm : Screen
     data object AccessibilityDisclosure : Screen
 }
 
@@ -58,6 +64,7 @@ class MainActivity : ComponentActivity() {
         val today by vm.today.collectAsStateWithLifecycle()
         val permissions by vm.permissions.collectAsStateWithLifecycle()
         val message by vm.message.collectAsStateWithLifecycle()
+        val lockDraft by vm.lockDraft.collectAsStateWithLifecycle()
         val snackbar = remember { SnackbarHostState() }
         var disclosureReturnTo by rememberSaveable { mutableStateOf(false) }
 
@@ -69,25 +76,47 @@ class MainActivity : ComponentActivity() {
         }
         BackHandler(enabled = screen != Screen.Home) { screen = Screen.Home }
 
+        // 初回利用時はタスクを先に設定する（DESIGN.md §9.6-6 決定事項2）。タスクの設定だけではロックは始まらない
+        fun openLockedApps() {
+            if (today?.tasks?.isEmpty() == true) {
+                screen = Screen.TaskSetup(thenLockedApps = true)
+            } else {
+                vm.beginLockSelection()
+                screen = Screen.LockedApps
+            }
+        }
+
         Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
             val modifier = Modifier.padding(padding)
             when (val s = screen) {
                 Screen.Home -> HomeScreen(
                     today = today,
                     permissions = permissions,
-                    onAddTask = { screen = Screen.TaskSetup },
+                    onAddTask = { screen = Screen.TaskSetup() },
                     onCompleteTask = { screen = Screen.Complete(it) },
                     onDeleteTask = vm::deactivateTask,
-                    onLockedApps = { screen = Screen.LockedApps },
+                    onLockedApps = { openLockedApps() },
                     onEnableBlocking = { screen = Screen.AccessibilityDisclosure },
                     modifier = modifier,
                 )
-                Screen.TaskSetup -> TaskSetupScreen(
+                is Screen.TaskSetup -> TaskSetupScreen(
                     vm = vm,
                     today = today,
                     usageAccessGranted = permissions.usageAccessGranted,
                     onOpenUsageSettings = { startActivity(appContainer().usageStats.settingsIntent()) },
-                    onDone = { screen = Screen.Home },
+                    onDone = {
+                        if (s.thenLockedApps) {
+                            vm.beginLockSelection()
+                            screen = Screen.LockedApps
+                        } else {
+                            screen = Screen.Home
+                        }
+                    },
+                    intro = if (s.thenLockedApps) {
+                        "ロックするアプリを選ぶ前に、毎日やるタスクを1つ決めましょう。タスクを決めただけではロックは始まりません。"
+                    } else {
+                        null
+                    },
                     modifier = modifier,
                 )
                 is Screen.Complete -> CompleteScreen(
@@ -100,6 +129,7 @@ class MainActivity : ComponentActivity() {
                 )
                 Screen.LockedApps -> LockedAppsScreen(
                     vm = vm,
+                    draft = lockDraft,
                     lockedPackages = today?.lockedApps?.map { it.packageName }?.toSet().orEmpty(),
                     studyPackages = today?.studyPackages.orEmpty(),
                     locked = today?.locked == true,
@@ -108,7 +138,16 @@ class MainActivity : ComponentActivity() {
                         disclosureReturnTo = true
                         screen = Screen.AccessibilityDisclosure
                     },
+                    onNeedConfirmation = { screen = Screen.LockConfirm },
                     onDone = { screen = Screen.Home },
+                    modifier = modifier,
+                )
+                Screen.LockConfirm -> LockConfirmScreen(
+                    vm = vm,
+                    draft = lockDraft,
+                    savedLabels = today?.lockedApps?.associate { it.packageName to it.label }.orEmpty(),
+                    onBack = { screen = Screen.LockedApps },
+                    onApplied = { screen = Screen.Home },
                     modifier = modifier,
                 )
                 Screen.AccessibilityDisclosure -> AccessibilityDisclosureScreen(
