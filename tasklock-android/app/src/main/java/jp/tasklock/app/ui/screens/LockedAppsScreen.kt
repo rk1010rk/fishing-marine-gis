@@ -30,6 +30,7 @@ import jp.tasklock.app.ui.MainViewModel
 /**
  * ロック対象アプリの選択。
  * ロック中は「外す」操作、学習アプリに設定中のアプリの選択はできない（最終判定は Repository 側）
+ * 既定の SMS アプリは候補に出さないが、登録済みの場合は DB の行を残したまま「除外中」と表示する（ブロックはされない）
  */
 @Composable
 fun LockedAppsScreen(
@@ -43,7 +44,7 @@ fun LockedAppsScreen(
     modifier: Modifier = Modifier,
 ) {
     var apps by remember { mutableStateOf<List<AppInfo>?>(null) }
-    LaunchedEffect(Unit) { apps = vm.launchableApps() }
+    LaunchedEffect(Unit) { apps = vm.launchableApps(includeDefaultSms = true) }
 
     LazyColumn(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         item {
@@ -69,7 +70,8 @@ fun LockedAppsScreen(
         if (list == null) {
             item { Text("読み込み中…") }
         } else {
-            items(list, key = { it.packageName }) { app ->
+            val visible = list.filter { !it.isDefaultSms || it.packageName in lockedPackages }
+            items(visible, key = { it.packageName }) { app ->
                 val checked = app.packageName in lockedPackages
                 val isStudyApp = app.packageName in studyPackages
                 val enabled = if (checked) !locked else !isStudyApp
@@ -81,6 +83,7 @@ fun LockedAppsScreen(
                     Column {
                         Text(app.label)
                         if (isStudyApp) Text("学習アプリに設定中", style = MaterialTheme.typography.bodySmall)
+                        if (app.isDefaultSms) Text("除外中（既定のSMSアプリ）", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
