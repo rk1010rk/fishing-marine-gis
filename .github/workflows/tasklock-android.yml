@@ -107,13 +107,22 @@ jobs:
             echo "::error::Expected exactly one debug APK, found ${#apks[@]}"
             exit 1
           fi
-          certs=$("$apksigner" verify --print-certs "${apks[0]}")
-          signers=$(printf '%s\n' "$certs" | grep -c '^Signer #[0-9]* certificate SHA-256 digest:' || true)
-          actual=$(printf '%s\n' "$certs" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          echo "apksigner: ${apksigner}"
           echo "APK: ${apks[0]}"
-          echo "APK signer count: ${signers}"
-          echo "APK certificate SHA-256: ${actual}"
-          if [ "$signers" -ne 1 ] || [ "$actual" != "$EXPECTED_CERT_SHA256" ]; then
+          certs=$("$apksigner" verify --print-certs "${apks[0]}")
+          # 署名者の表記は apksigner の版で異なる（"Signer #1" / "Signer (minSdkVersion=...)"）ため、表記に依存せず
+          # 証明書行（公開情報）だけを表示し、SHA-256 の種類がちょうど1つで期待値と一致することを確認する
+          printf '%s\n' "$certs" | grep -E '^Signer.* certificate (DN|SHA-256 digest):' || true
+          digests=$(printf '%s\n' "$certs" | grep -E '^Signer.* certificate SHA-256 digest:' \
+            | sed -E 's/.*SHA-256 digest:[[:space:]]*//' | sort -u || true)
+          count=$(printf '%s' "$digests" | grep -c . || true)
+          if [ "$count" -eq 0 ]; then
+            # 証明書行が見つからない場合だけ、原因調査のため apksigner の出力（公開情報のみ）をそのまま表示する
+            printf '%s\n' "$certs"
+          fi
+          echo "APK distinct signing certificates: ${count}"
+          echo "APK certificate SHA-256: ${digests}"
+          if [ "$count" -ne 1 ] || [ "$digests" != "$EXPECTED_CERT_SHA256" ]; then
             echo "::error::APK signing certificate does not match the expected value ${EXPECTED_CERT_SHA256}"
             exit 1
           fi
