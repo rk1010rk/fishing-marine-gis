@@ -11,6 +11,7 @@ import jp.tasklock.app.platform.AccessibilityStatus
 import jp.tasklock.app.platform.AppInfo
 import jp.tasklock.core.model.Task
 import jp.tasklock.core.policy.ChangeResult
+import jp.tasklock.core.policy.ImportantApps
 import jp.tasklock.core.policy.LockNotice
 import jp.tasklock.core.policy.LockSelection
 import jp.tasklock.core.policy.LockSelectionDiff
@@ -107,6 +108,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     suspend fun previewLockNotice(diff: LockSelectionDiff): LockNotice = repository.previewLockNotice(diff)
+
+    /** 確認画面の「重要なアプリに関する警告」の対象（§9.6-3）。追加するアプリだけを判定し、DB には触れない */
+    suspend fun importantApps(diff: LockSelectionDiff): Set<String> = withContext(Dispatchers.IO) {
+        val apps = container.installedApps
+        ImportantApps.detect(diff.added, apps.smsHandlerPackages(), apps.geoHandlerPackages())
+    }
 
     /**
      * ロック対象の画面の「確定」で、外すだけの変更を反映する。
