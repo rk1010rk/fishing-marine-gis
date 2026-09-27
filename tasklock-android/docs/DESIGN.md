@@ -371,7 +371,7 @@ Phase 1 の実装（`1c7fb40`）は凍結済みとし、本節の変更は **仕
 
 ### CI のデバッグ APK の署名（2026-09-27 固定）
 - **背景:** 以前の CI は、実行ごとに作られる使い捨てのデバッグ鍵で署名していた。そのため別の実行の APK へは上書き更新できない（CI run #5 の APK を `adb install -r` → `INSTALL_FAILED_UPDATE_INCOMPATIBLE`）
-- **方式:** 固定のデバッグ鍵（PKCS12、エイリアス `androiddebugkey`、パスワードは Android 標準のデバッグ用の値）を GitHub Secret `TASKLOCK_DEBUG_KEYSTORE_B64`（Base64）に保管する。app-build ジョブはビルド前に、この鍵を既定の場所（`~/.android/debug.keystore`）へ置く。`build.gradle.kts` は変更しない
+- **方式:** 固定のデバッグ鍵（PKCS12、エイリアス `androiddebugkey`、パスワードは Android 標準のデバッグ用の値）を GitHub Secret `TASKLOCK_DEBUG_KEYSTORE_B64`（Base64）に保管する。app-build ジョブはビルド前に、この鍵を `~/.android/debug.keystore` に置き、AGP が参照する場所を環境変数 `ANDROID_USER_HOME` で同じ場所に明示する。`build.gradle.kts` は変更しない（CI run #7 では場所を明示しなかったため、AGP が別の場所に作った鍵（証明書 SHA-256 `8746057a…6b8081`）で署名し、検証の手順で失敗した）
 - **検証:** ビルド前に鍵の証明書を、ビルド後に APK の証明書を、それぞれ期待値の SHA-256 と照合する。一致しなければジョブを失敗させる。Secret が未登録の場合も失敗させる（使い捨ての鍵で署名した APK を作らない）。ログに出すのは証明書の SHA-256 だけで、Secret と鍵の中身は出さない
 - **期待値（固定鍵の証明書 SHA-256）:** `1e6152d6125d65401b2e65d47eda4c11e7af93708c2bfc0e58ab55d3dde9e090`（`CN=Android Debug, O=Android, C=US`、有効期限 2054-02-12）
 - **適用範囲:** app-build ジョブのみ（core-test は対象外）

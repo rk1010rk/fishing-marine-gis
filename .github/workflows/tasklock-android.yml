@@ -69,7 +69,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       # 実行ごとに作られる使い捨てのデバッグ鍵ではなく、Secret の固定鍵で署名する（DESIGN.md §10「CI のデバッグ APK の署名」）
-      # AGP は既定の場所のデバッグ鍵を使うため、build.gradle.kts は変更しない
+      # AGP が使うデバッグ鍵の場所を ANDROID_USER_HOME で明示し、そこに置く（build.gradle.kts は変更しない）
       # Secret の値・復号した鍵はログに出さない（set -x や echo をしない）
       - name: Restore fixed debug keystore
         env:
@@ -80,8 +80,12 @@ jobs:
             echo "::error::Secret TASKLOCK_DEBUG_KEYSTORE_B64 is not set; refusing to sign with a throwaway debug key"
             exit 1
           fi
-          keystore_dir="${ANDROID_USER_HOME:-$HOME/.android}"
+          # 既定の場所は環境変数で変わるため、原因調査用に現在の値（公開情報）を表示してから明示的に指定する
+          echo "Before: ANDROID_USER_HOME=${ANDROID_USER_HOME:-<unset>} ANDROID_PREFS_ROOT=${ANDROID_PREFS_ROOT:-<unset>} ANDROID_SDK_HOME=${ANDROID_SDK_HOME:-<unset>}"
+          keystore_dir="$HOME/.android"
           mkdir -p "$keystore_dir"
+          echo "ANDROID_USER_HOME=$keystore_dir" >> "$GITHUB_ENV"
+          echo "Keystore location: $keystore_dir/debug.keystore"
           printf '%s' "$DEBUG_KEYSTORE_B64" | base64 -d > "$keystore_dir/debug.keystore"
           chmod 600 "$keystore_dir/debug.keystore"
           # 鍵ファイルの証明書（公開情報）だけを確認する。Secret の誤登録をビルド前に検出するため
@@ -110,10 +114,11 @@ jobs:
           echo "apksigner: ${apksigner}"
           echo "APK: ${apks[0]}"
           certs=$("$apksigner" verify --print-certs "${apks[0]}")
-          # 署名者の表記は apksigner の版で異なる（"Signer #1" / "Signer (minSdkVersion=...)"）ため、表記に依存せず
-          # 証明書行（公開情報）だけを表示し、SHA-256 の種類がちょうど1つで期待値と一致することを確認する
-          printf '%s\n' "$certs" | grep -E '^Signer.* certificate (DN|SHA-256 digest):' || true
-          digests=$(printf '%s\n' "$certs" | grep -E '^Signer.* certificate SHA-256 digest:' \
+          # 署名者の表記は apksigner の版で異なる（"Signer #1 certificate" / "V2 Signer: certificate" など）ため、表記に依存せず
+          # 証明書行（公開情報）だけを表示し、SHA-256 の種類がちょうど1つで期待値と一致することを確認する（Source Stamp は対象外）
+          signer_lines=$(printf '%s\n' "$certs" | grep -E 'Signer.*certificate (DN|SHA-256 digest):' | grep -v '^Source Stamp' || true)
+          printf '%s\n' "$signer_lines"
+          digests=$(printf '%s\n' "$signer_lines" | grep 'SHA-256 digest:' \
             | sed -E 's/.*SHA-256 digest:[[:space:]]*//' | sort -u || true)
           count=$(printf '%s' "$digests" | grep -c . || true)
           if [ "$count" -eq 0 ]; then
@@ -123,6 +128,13 @@ jobs:
           echo "APK distinct signing certificates: ${count}"
           echo "APK certificate SHA-256: ${digests}"
           if [ "$count" -ne 1 ] || [ "$digests" != "$EXPECTED_CERT_SHA256" ]; then
+            # 原因調査用: ランナー上のデバッグ鍵の場所と証明書 SHA-256（公開情報）だけを表示する
+            echo "ANDROID_USER_HOME=${ANDROID_USER_HOME:-<unset>}"
+            find "$HOME" /usr/local/lib/android /tmp -name debug.keystore -type f 2>/dev/null | while read -r ks; do
+              fp=$(keytool -list -v -keystore "$ks" -storepass android -alias androiddebugkey 2>/dev/null \
+                | sed -n 's/^[[:space:]]*SHA256:[[:space:]]*//p' | tr -d ':' | tr 'A-F' 'a-f' || true)
+              echo "Found debug keystore: $ks SHA-256: ${fp:-<unreadable>}"
+            done || true
             echo "::error::APK signing certificate does not match the expected value ${EXPECTED_CERT_SHA256}"
             exit 1
           fi
