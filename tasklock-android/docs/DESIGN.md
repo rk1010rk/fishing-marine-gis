@@ -411,6 +411,22 @@ Room のソースによる説明（作業中のレビューで Room のソース
 - 未確認（推測で仕様に含めない）: v2 の導入後に過去の版の JSON が CI のビルドでどう扱われるか、またそれに対して A がどこまで検出できるか。v2 の導入時に実測して記録する（C は SHA-256 の照合なので、この点に左右されない）
 - 実装は別の PR で行う。作業ブランチにある `Verify committed Room schemas`（A に相当）と一時的な調査用の手順の扱いも、その PR で決める
 
+スキーマ JSON の CI ガードの実装と確認（2026-10-01 の記録）
+- 実装（`a9eb21c`）: C は独立したジョブ `room-schema-pins`（`:app Room schema pins`）として、ビルド前のコミット済みの状態で `app/schemas` の全 JSON に固定値の登録があることを確認し、固定値ファイル `tasklock-android/app/room-schema-sha256.txt` を `sha256sum --check --strict` で照合する。A（`:app assembleDebug` の `Verify committed Room schemas`）は処理を変えず、コメントとエラーメッセージを上の仕様の範囲に合わせた。一時的な調査用の手順2つは削除した。v1 の固定値（`5a3d8c8c…0c1d`）を登録した
+- CI での実測結果（いずれも手動実行）
+
+| run | commit | 内容 | C | A | その他 |
+|---|---|---|---|---|---|
+| #30 | `a9eb21c` | 正常系（A＋C の実装） | success（`1.json: OK`） | success | `:core unit tests`、ビルド、APK の署名照合、スキーマ JSON のアップロードも success |
+| #31 | `fda86f2` | 検証用: `identityHash` の末尾1文字だけ変更 | **failure**（`1.json: FAILED`） | success | ほかも success |
+| #32 | `c1de03c` | 検証用: `locked_apps` の `label` → `labelX` | **failure**（`1.json: FAILED`） | **failure**（`labelX` → `label` の差分） | ビルドと署名照合は success |
+| #33 | `7c9b1ef` | #32 の revert 後 | success | success | すべて success |
+
+- `fda86f2` は `440f3f6` で、`c1de03c` は `7c9b1ef` で revert した。revert 後の `1.json` は blob `d33482a…`、SHA-256 `5a3d8c8c…0c1d` で、内容は `a9eb21c` と同一
+- #31 で A が検出しなかったのは失敗ではなく、仕様に書いた A の限界（`identityHash` だけの変更は検出しない。#25 の実測）を、C の導入後の CI で再確認した結果である。この変更は C が検出した
+- #32 では A と C の両方が検出した。C を独立したジョブにしたため、A と C の結果を別々に確認できた
+- CI では未実施: 固定値が登録されていない JSON がある場合（例: `2.json` の追加）と、固定対象の JSON を削除した場合。C の照合スクリプトをローカルの一時コピーで実行し、どちらも終了コード 1 で失敗することを確認した（正常時は 0、`identityHash` の変更も 1）
+
 **保留する事項**（実際の利用状況を踏まえて、別途要件を確定してから着手する）
 - 有効な時間（何分間か）
 - 期限が日付をまたぐ場合の扱い（当日の終わりで打ち切るかなど）。時間の長さと合わせて決める。保存する `expiresAt` の値だけが変わり、スキーマには影響しない
