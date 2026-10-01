@@ -295,7 +295,7 @@
           },
           {
             "fieldPath": "label",
-            "columnName": "labelX",
+            "columnName": "label",
             "affinity": "TEXT",
             "notNull": true
           },
