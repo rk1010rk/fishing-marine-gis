@@ -366,6 +366,67 @@ Phase 1 の実装（`1c7fb40`）は凍結済みとし、本節の変更は **仕
 - Room の AutoMigration（v1→v2）を使う。変更はテーブル `emergency_unlocks` とその索引の追加だけで、既存の6テーブルのデータは保持する。`lock_rules` の初期行を入れる `onCreate` は既存の DB では動かない
 - AutoMigration には v1 のスキーマ JSON が必要なため、次の順で進める: ①v1 のスキーマ JSON を CI から取得できるようにする（項目2の実装とは別の PR）②取得した v1 のスキーマ JSON をリポジトリに入れる。可能なら実機の v1 の DB の identity hash と照合する ③項目2の DB 実装と AutoMigration ④CI と実機（既存データのある v1 からの上書きインストール）で検証する
 
+v1 スキーマ JSON と CI での確認（2026-09-29〜10-01 の記録）
+- 経緯: ①は PR #11（CI のアーティファクト `tasklock-room-schemas`）、②は PR #12（`app/schemas/jp.tasklock.app.data.db.AppDatabase/1.json`、`version` 1、`identityHash` `2c89e8710c577c26a16b4db82968aa8f`、SHA-256 `5a3d8c8c…0c1d`、CI run #22 のアーティファクトをそのまま追加）で完了。実機の v1 DB の identity hash との照合はまだ行っていない
+- 検証用のガード: ビルド後に `app/schemas` の git の状態を確認し、差分か未追跡のファイルがあれば失敗させる手順（`Verify committed Room schemas`、`0b5257a`）を作業ブランチに追加し、以下を実測した。**有効なガードとしてはまだ認定していない**（何を保証するガードにするかは未決定）
+
+実測結果（CI の実ファイルの一覧と SHA-256 を主な証拠とし、Gradle のログは補助とする）
+
+| run | `app/schemas/.../1.json` の状態 | Room のスキーマ JSON の生成・コピー | ビルド後の `1.json` | ガード |
+|---|---|---|---|---|
+| #22 | まだない | `copyRoomSchemas` が実行され、`1.json` が作られた | `5a3d8c8c…`（生成物） | （未導入） |
+| #24 | 正しい内容 | 未確認（生成・コピーの状態は記録していない） | `5a3d8c8c…` | success |
+| #25 | `identityHash` の末尾1文字だけ変更（f→e） | 未確認。ビルド後も改ざんした内容のまま残った | `15f6e8d2…`（改ざんしたまま） | **success（検出できず）** |
+| #26 | 正しい内容（#25 を revert） | 未確認 | `5a3d8c8c…` | success |
+| #27 | 正しい内容 | `copyRoomSchemas` は `NO-SOURCE`。ビルド後の `app/build` に JSON は1件もない | `5a3d8c8c…` | success |
+| #28 | 正しい内容 | `intermediates/room/schemas` は KSP 前にはなく、KSP 後は `kspDebugKotlin/` だけで JSON は0件。`copyRoomSchemas` は `NO-SOURCE` | `5a3d8c8c…` | success |
+| #29 | 列名を1か所だけ変更（`locked_apps` の `label` → `labelX`） | KSP 後に `intermediates/room/schemas/kspDebugKotlin/.../1.json`（`5a3d8c8c…`）が作られ、`copyRoomSchemas` が実行された | `5a3d8c8c…`（正しい内容に置き換わった） | **failure（`labelX` → `label` の差分を検出）** |
+
+- #25 と #29 は検証用の意図的な変更で、いずれも revert 済み（#25 は `93818af`、#29 は `e7490c6`）
+- #29 では APK のビルドと署名の照合は成功した（列名を変えた JSON でビルドは止まらなかった）
+- #28・#29 の「KSP 後」は、`./gradlew :app:kspDebugKotlin` の実行後の状態で、Gradle が `copyRoomSchemas` も続けて実行している。KSP だけが終わった時点の状態は観測していない
+
+Room のソースによる説明（作業中のレビューで Room のソースを確認した内容。実測ではない）
+- Room はスキーマの書き出し時に既存のスキーマファイルを読み、現在のスキーマと比較して同一なら書き出さない。比較はエンティティ・ビュー等の構造で行い、`identityHash` は比較の対象ではない
+- `copyRoomSchemas` は、コピー元（`build/intermediates/room/schemas/<タスク名>`）にファイルがあれば `schemaDirectory` に上書きでコピーするだけで、既存ファイルとの比較はしない。コピー元が空なら `NO-SOURCE` になる
+- この説明は上の実測結果（#25 は検出できず、#29 は検出できた）と矛盾しない
+
+現時点で言えること・未確認の事項
+- 実測から言えるのは「構造（少なくとも列名）が違う場合は Room が JSON を書き出し直し、今のガードが差分を検出した」「`identityHash` だけが違う場合は書き出し直されず、今のガードは検出できなかった」まで
+- 未確認: v2 の導入後に、過去の版の `1.json` が CI のビルドでどう扱われるか（書き出し直されるか）
+- 未確認: v2 の導入後に過去の版の JSON を変更した場合、今のガードで検出できるか
+- 未確認: `identityHash` の違いが AutoMigration や実行時にどう影響するか
+- 未確認: #24・#25・#26 での `copyRoomSchemas` の実行状態（ログを記録していない）
+- ガードの目的（例: 構造の差を検出するか、コミット済み JSON と生成物の完全一致を保証するか、過去の版の JSON が変わらないことを保証するか）と実装方法は、この記録を踏まえて別途決める
+
+スキーマ JSON の CI ガード（2026-10-01 確定）
+- 上の記録を踏まえ、スキーマ JSON は次の A と C の2つのガードで守る。役割は重ならない（A は Room による書き出し直し等の検出、C は固定値との照合と main に入った版の固定）
+- **A（Room の出力との整合）**: ビルド後に `app/schemas` に差分または未追跡のファイルがあれば CI を失敗させる。開発中の版について、Room が JSON を書き出し直した場合に、コミット済みの JSON との差分として検出する。新しい版の JSON の入れ忘れ（未追跡のファイル）も検出する
+  - 検出できる範囲は上の実測のとおり: Room が構造の違いを検出して JSON を書き出し直した場合（#29 の列名の変更）は検出できる。Room が同一と判断する違い（#25 の `identityHash` だけの変更）は検出できない
+- **C（main に入った版の固定）**: スキーマ JSON（`tasklock-android/app/schemas/<データベースのクラスの完全名>/<版>.json`）は、版やマイグレーションの方式（AutoMigration か手書きの Migration か）を問わず、版ごとに SHA-256 の固定値を登録し、CI で照合する。1バイトでも違えば失敗させ、固定値が登録されていない JSON があっても失敗させる。開発中はレビュー中の変更に合わせて固定値を更新できる。main にマージされた後は固定値を変更しない
+  - 新しい版の JSON を main に入れる PR では、その版の SHA-256 の固定値を同じ PR で追加する（レビュー中に JSON が変わった場合は固定値も更新する）
+  - main に入った後は、固定値を変更しない。変更が必要になった場合は、通常のスキーマ更新ではなく仕様変更として別途扱う
+  - 開発中の版（例: 項目2の実装中の `2.json`）も、JSON を PR に追加した時点で固定値を登録する。レビュー中は JSON の変更に合わせて固定値を更新できる。main にマージされた時点の固定値が、その版の固定値になる
+- 現時点の C の固定値: `tasklock-android/app/schemas/jp.tasklock.app.data.db.AppDatabase/1.json` = `5a3d8c8cc72904d497d3e04149020a44e946619d955d7f3df2b397a806910c1d`
+- 未確認（推測で仕様に含めない）: v2 の導入後に過去の版の JSON が CI のビルドでどう扱われるか、またそれに対して A がどこまで検出できるか。v2 の導入時に実測して記録する（C は SHA-256 の照合なので、この点に左右されない）
+- 実装は別の PR で行う。作業ブランチにある `Verify committed Room schemas`（A に相当）と一時的な調査用の手順の扱いも、その PR で決める
+
+スキーマ JSON の CI ガードの実装と確認（2026-10-01 の記録）
+- 実装（`a9eb21c`）: C は独立したジョブ `room-schema-pins`（`:app Room schema pins`）として、ビルド前のコミット済みの状態で `app/schemas` の全 JSON に固定値の登録があることを確認し、固定値ファイル `tasklock-android/app/room-schema-sha256.txt` を `sha256sum --check --strict` で照合する。A（`:app assembleDebug` の `Verify committed Room schemas`）は処理を変えず、コメントとエラーメッセージを上の仕様の範囲に合わせた。一時的な調査用の手順2つは削除した。v1 の固定値（`5a3d8c8c…0c1d`）を登録した
+- CI での実測結果（いずれも手動実行）
+
+| run | commit | 内容 | C | A | その他 |
+|---|---|---|---|---|---|
+| #30 | `a9eb21c` | 正常系（A＋C の実装） | success（`1.json: OK`） | success | `:core unit tests`、ビルド、APK の署名照合、スキーマ JSON のアップロードも success |
+| #31 | `fda86f2` | 検証用: `identityHash` の末尾1文字だけ変更 | **failure**（`1.json: FAILED`） | success | ほかも success |
+| #32 | `c1de03c` | 検証用: `locked_apps` の `label` → `labelX` | **failure**（`1.json: FAILED`） | **failure**（`labelX` → `label` の差分） | ビルドと署名照合は success |
+| #33 | `7c9b1ef` | #32 の revert 後 | success | success | すべて success |
+
+- `fda86f2` は `440f3f6` で、`c1de03c` は `7c9b1ef` で revert した。revert 後の `1.json` は blob `d33482a…`、SHA-256 `5a3d8c8c…0c1d` で、内容は `a9eb21c` と同一
+- #31 で A が検出しなかったのは失敗ではなく、仕様に書いた A の限界（`identityHash` だけの変更は検出しない。#25 の実測）を、C の導入後の CI で再確認した結果である。この変更は C が検出した
+- #32 では A と C の両方が検出した。C を独立したジョブにしたため、A と C の結果を別々に確認できた
+- CI では未実施: 固定値が登録されていない JSON がある場合（例: `2.json` の追加）と、固定対象の JSON を削除した場合。C の照合スクリプトをローカルの一時コピーで実行し、どちらも終了コード 1 で失敗することを確認した（正常時は 0、`identityHash` の変更も 1）
+
 **保留する事項**（実際の利用状況を踏まえて、別途要件を確定してから着手する）
 - 有効な時間（何分間か）
 - 期限が日付をまたぐ場合の扱い（当日の終わりで打ち切るかなど）。時間の長さと合わせて決める。保存する `expiresAt` の値だけが変わり、スキーマには影響しない

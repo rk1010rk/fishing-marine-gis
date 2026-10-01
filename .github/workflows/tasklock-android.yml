@@ -48,6 +48,37 @@ jobs:
           path: tasklock-android/core/build/reports/tests/test
           if-no-files-found: ignore
 
+  room-schema-pins:
+    name: ":app Room schema pins"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # C: スキーマ JSON をコミットされたまま（ビルド前）に固定値と照合する（DESIGN.md §9.6-2「スキーマ JSON の CI ガード」）
+      # 固定値が登録されていない JSON があるか、固定値と1バイトでも違えば失敗させる。ビルドで書き換わる前に確認するため、
+      # また A の結果に左右されないよう、:app assembleDebug とは別のジョブにする
+      - name: Verify Room schema SHA-256 pins
+        run: |
+          set -euo pipefail
+          pins=app/room-schema-sha256.txt
+          if [ ! -f "$pins" ]; then
+            echo "::error::$pins is missing"
+            exit 1
+          fi
+          missing=0
+          while IFS= read -r -d '' f; do
+            if ! grep -v '^#' "$pins" | awk -v p="$f" '$2 == p { found = 1 } END { exit !found }'; then
+              echo "::error::No SHA-256 pin registered for $f (add it to $pins)"
+              missing=1
+            fi
+          done < <(find app/schemas -type f -name '*.json' -print0 | sort -z)
+          checked=0
+          grep -v '^#' "$pins" | sha256sum --check --strict - || checked=1
+          if [ "$missing" -ne 0 ] || [ "$checked" -ne 0 ]; then
+            echo "::error::Room schema JSON does not match the registered SHA-256 pins"
+            exit 1
+          fi
+
   app-build:
     name: ":app assembleDebug"
     runs-on: ubuntu-latest
@@ -153,3 +184,19 @@ jobs:
           name: tasklock-room-schemas
           path: tasklock-android/app/schemas
           if-no-files-found: error
+
+      # A: ビルド後の app/schemas に差分か未追跡のファイルがあれば失敗させる（DESIGN.md §9.6-2「スキーマ JSON の CI ガード」）
+      # Room が JSON を書き出し直した場合の差分と、新しい版の JSON の入れ忘れを検出する。Room が同一と判断する違い
+      # （identityHash だけの変更など）は検出できないため、JSON の固定は C（room-schema-pins ジョブ）で行う
+      # 原因調査用に Upload Room schemas の後に置く
+      - name: Verify committed Room schemas
+        run: |
+          set -euo pipefail
+          status=$(git status --porcelain --untracked-files=all -- app/schemas)
+          sha256sum app/schemas/*/*.json
+          if [ -n "$status" ]; then
+            printf '%s\n' "$status"
+            git diff -- app/schemas || true
+            echo "::error::app/schemas changed during the build (Room rewrote a schema JSON) or has an uncommitted schema JSON"
+            exit 1
+          fi
