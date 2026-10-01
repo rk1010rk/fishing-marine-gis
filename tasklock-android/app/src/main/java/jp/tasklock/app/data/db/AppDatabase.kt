@@ -1,6 +1,7 @@
 package jp.tasklock.app.data.db
 
 import android.content.Context
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -15,9 +16,12 @@ import jp.tasklock.core.model.LockRule
         LockRuleEntity::class,
         LockedAppEntity::class,
         UnlockGrantEntity::class,
+        EmergencyUnlockEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
+    // v1→v2 は emergency_unlocks の追加だけ（DESIGN.md §9.6-2）。既存のテーブルとデータには触れない
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun taskDao(): TaskDao
@@ -26,6 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun lockRuleDao(): LockRuleDao
     abstract fun lockedAppDao(): LockedAppDao
     abstract fun unlockGrantDao(): UnlockGrantDao
+    abstract fun emergencyUnlockDao(): EmergencyUnlockDao
 
     companion object {
         fun build(context: Context): AppDatabase =
