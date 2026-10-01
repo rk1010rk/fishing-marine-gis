@@ -366,6 +366,39 @@ Phase 1 の実装（`1c7fb40`）は凍結済みとし、本節の変更は **仕
 - Room の AutoMigration（v1→v2）を使う。変更はテーブル `emergency_unlocks` とその索引の追加だけで、既存の6テーブルのデータは保持する。`lock_rules` の初期行を入れる `onCreate` は既存の DB では動かない
 - AutoMigration には v1 のスキーマ JSON が必要なため、次の順で進める: ①v1 のスキーマ JSON を CI から取得できるようにする（項目2の実装とは別の PR）②取得した v1 のスキーマ JSON をリポジトリに入れる。可能なら実機の v1 の DB の identity hash と照合する ③項目2の DB 実装と AutoMigration ④CI と実機（既存データのある v1 からの上書きインストール）で検証する
 
+v1 スキーマ JSON と CI での確認（2026-09-29〜10-01 の記録）
+- 経緯: ①は PR #11（CI のアーティファクト `tasklock-room-schemas`）、②は PR #12（`app/schemas/jp.tasklock.app.data.db.AppDatabase/1.json`、`version` 1、`identityHash` `2c89e8710c577c26a16b4db82968aa8f`、SHA-256 `5a3d8c8c…0c1d`、CI run #22 のアーティファクトをそのまま追加）で完了。実機の v1 DB の identity hash との照合はまだ行っていない
+- 検証用のガード: ビルド後に `app/schemas` の git の状態を確認し、差分か未追跡のファイルがあれば失敗させる手順（`Verify committed Room schemas`、`0b5257a`）を作業ブランチに追加し、以下を実測した。**有効なガードとしてはまだ認定していない**（何を保証するガードにするかは未決定）
+
+実測結果（CI の実ファイルの一覧と SHA-256 を主な証拠とし、Gradle のログは補助とする）
+
+| run | `app/schemas/.../1.json` の状態 | Room のスキーマ JSON の生成・コピー | ビルド後の `1.json` | ガード |
+|---|---|---|---|---|
+| #22 | まだない | `copyRoomSchemas` が実行され、`1.json` が作られた | `5a3d8c8c…`（生成物） | （未導入） |
+| #24 | 正しい内容 | 未確認（生成・コピーの状態は記録していない） | `5a3d8c8c…` | success |
+| #25 | `identityHash` の末尾1文字だけ変更（f→e） | 未確認。ビルド後も改ざんした内容のまま残った | `15f6e8d2…`（改ざんしたまま） | **success（検出できず）** |
+| #26 | 正しい内容（#25 を revert） | 未確認 | `5a3d8c8c…` | success |
+| #27 | 正しい内容 | `copyRoomSchemas` は `NO-SOURCE`。ビルド後の `app/build` に JSON は1件もない | `5a3d8c8c…` | success |
+| #28 | 正しい内容 | `intermediates/room/schemas` は KSP 前にはなく、KSP 後は `kspDebugKotlin/` だけで JSON は0件。`copyRoomSchemas` は `NO-SOURCE` | `5a3d8c8c…` | success |
+| #29 | 列名を1か所だけ変更（`locked_apps` の `label` → `labelX`） | KSP 後に `intermediates/room/schemas/kspDebugKotlin/.../1.json`（`5a3d8c8c…`）が作られ、`copyRoomSchemas` が実行された | `5a3d8c8c…`（正しい内容に置き換わった） | **failure（`labelX` → `label` の差分を検出）** |
+
+- #25 と #29 は検証用の意図的な変更で、いずれも revert 済み（#25 は `93818af`、#29 は `e7490c6`）
+- #29 では APK のビルドと署名の照合は成功した（列名を変えた JSON でビルドは止まらなかった）
+- #28・#29 の「KSP 後」は、`./gradlew :app:kspDebugKotlin` の実行後の状態で、Gradle が `copyRoomSchemas` も続けて実行している。KSP だけが終わった時点の状態は観測していない
+
+Room のソースによる説明（作業中のレビューで Room のソースを確認した内容。実測ではない）
+- Room はスキーマの書き出し時に既存のスキーマファイルを読み、現在のスキーマと比較して同一なら書き出さない。比較はエンティティ・ビュー等の構造で行い、`identityHash` は比較の対象ではない
+- `copyRoomSchemas` は、コピー元（`build/intermediates/room/schemas/<タスク名>`）にファイルがあれば `schemaDirectory` に上書きでコピーするだけで、既存ファイルとの比較はしない。コピー元が空なら `NO-SOURCE` になる
+- この説明は上の実測結果（#25 は検出できず、#29 は検出できた）と矛盾しない
+
+現時点で言えること・未確認の事項
+- 実測から言えるのは「構造（少なくとも列名）が違う場合は Room が JSON を書き出し直し、今のガードが差分を検出した」「`identityHash` だけが違う場合は書き出し直されず、今のガードは検出できなかった」まで
+- 未確認: v2 の導入後に、過去の版の `1.json` が CI のビルドでどう扱われるか（書き出し直されるか）
+- 未確認: v2 の導入後に過去の版の JSON を変更した場合、今のガードで検出できるか
+- 未確認: `identityHash` の違いが AutoMigration や実行時にどう影響するか
+- 未確認: #24・#25・#26 での `copyRoomSchemas` の実行状態（ログを記録していない）
+- ガードの目的（例: 構造の差を検出するか、コミット済み JSON と生成物の完全一致を保証するか、過去の版の JSON が変わらないことを保証するか）と実装方法は、この記録を踏まえて別途決める
+
 **保留する事項**（実際の利用状況を踏まえて、別途要件を確定してから着手する）
 - 有効な時間（何分間か）
 - 期限が日付をまたぐ場合の扱い（当日の終わりで打ち切るかなど）。時間の長さと合わせて決める。保存する `expiresAt` の値だけが変わり、スキーマには影響しない
