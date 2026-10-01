@@ -97,6 +97,31 @@ jobs:
             exit 1
           fi
 
+      # 【一時的な調査用・後で削除する】Room スキーマの生成経路を2地点で確認する（run #27 の調査）
+      # KSP だけを実行 → intermediates/room/schemas を表示 → copyRoomSchemas だけを実行 → 再表示。結果に関わらず失敗させない
+      - name: "TEMP: Trace Room schema generation (KSP -> copyRoomSchemas)"
+        run: |
+          set -uo pipefail
+          show() {
+            echo "--- [$1] app/build/intermediates/room/schemas"
+            if [ -d app/build/intermediates/room/schemas ]; then
+              echo "directory exists"
+              find app/build/intermediates/room/schemas -print | sort
+              find app/build/intermediates/room/schemas -type f -print0 | sort -z | xargs -0 -r sha256sum
+            else
+              echo "directory does not exist"
+            fi
+            echo "--- [$1] app/schemas"
+            sha256sum app/schemas/*/*.json || true
+          }
+          show "before KSP"
+          echo "=== ./gradlew :app:kspDebugKotlin --info (lines mentioning room/schema/ksp)"
+          ./gradlew :app:kspDebugKotlin --console=plain --info 2>&1 | grep -iE 'room|schema|kspDebugKotlin' || true
+          show "after KSP, before copyRoomSchemas"
+          echo "=== ./gradlew :app:copyRoomSchemas --info (lines mentioning room/schema/copy)"
+          ./gradlew :app:copyRoomSchemas --console=plain --info 2>&1 | grep -iE 'room|schema|copyRoomSchemas|NO-SOURCE|skipping' || true
+          show "after copyRoomSchemas"
+
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --console=plain --stacktrace
 
