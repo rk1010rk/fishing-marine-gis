@@ -427,6 +427,20 @@ Room のソースによる説明（作業中のレビューで Room のソース
 - #32 では A と C の両方が検出した。C を独立したジョブにしたため、A と C の結果を別々に確認できた
 - CI では未実施: 固定値が登録されていない JSON がある場合（例: `2.json` の追加）と、固定対象の JSON を削除した場合。C の照合スクリプトをローカルの一時コピーで実行し、どちらも終了コード 1 で失敗することを確認した（正常時は 0、`identityHash` の変更も 1）
 
+DB v2（`emergency_unlocks`）と AutoMigration の実装と確認（2026-10-01 の記録）
+- 実装（`7550b65`）: `EmergencyUnlockEntity`（`id` 自動採番・`day`・`startedAt`・`expiresAt`、すべて NULL 不可、`day` の索引のみ、外部キーなし）、`EmergencyUnlockDao`（`insert`・`countForDay`・`getLatest`・`observeLatest`、最新は `expiresAt` の降順で1件）、`AppDatabase` を v2 にして `AutoMigration(from = 1, to = 2)` を追加。ブロック判定・Repository・画面は変更していない
+- `2.json` の登録: CI が生成した `2.json` をアーティファクトから無加工でアップロードし（`06b6b82`）、正しい場所へ移動（R100）して固定値を登録した（`402b2a1`）。`2.json` は `version` 2、`identityHash` `15df984d9670ed1c41e33154275b1fa2`、SHA-256 `8ccdce850d059756a96c8bd2976b1892e5f75c3127f3188d98ec87011cb34d64`。`emergency_unlocks` の定義は上の設計どおりで、既存の6テーブルの定義は `1.json` と同一
+- CI での実測結果（いずれも手動実行）
+
+| run | commit | 状態 | C | A | その他 |
+|---|---|---|---|---|---|
+| #35 | `7550b65` | v2 の実装のみ（`2.json` は未コミット） | success（`1.json: OK`） | failure（未追跡の `2.json` を検出。想定どおり） | ビルド（AutoMigration の生成を含む）と APK の署名照合は success。ビルド後の `2.json` の SHA-256 は `8ccdce85…4d64` |
+| #36 | `402b2a1` | `2.json` と固定値を登録 | success（`1.json: OK`、`2.json: OK`） | success | `:core unit tests`、ビルド、APK の署名照合、スキーマ JSON のアップロードも success |
+
+- Room は v2 のビルドで `2.json` を生成し（#35）、コミットした `2.json` はその生成物と SHA-256 が一致する（#35 のログの `8ccdce85…4d64` と同じ）。#36 で A が差分を検出しなかったことは、上の記録のとおり Room が同一と判断して書き出さなかった場合も含むため、一致の根拠にはしない
+- `1.json` は #35・#36 ともビルドの前後で SHA-256 `5a3d8c8c…0c1d` のままで、作業ツリー上も変更されなかった。ただし、Room が `1.json` を同じ内容で書き直したのか、触れなかったのかは、この結果からは判別できない（上の CI ガードの「未確認」のうち、v2 の導入後に過去の版の JSON が CI でどう扱われるかについて、ここまでを実測した）
+- 未検証: 実機での v1 からの上書きインストール（AutoMigration の実行）。実機では、既存の v1 のデータ（タスク・完了記録・ロック対象・解除記録など）が保持されること、`emergency_unlocks` が追加されてアプリが起動することを確認対象とする
+
 **保留する事項**（実際の利用状況を踏まえて、別途要件を確定してから着手する）
 - 有効な時間（何分間か）
 - 期限が日付をまたぐ場合の扱い（当日の終わりで打ち切るかなど）。時間の長さと合わせて決める。保存する `expiresAt` の値だけが変わり、スキーマには影響しない
