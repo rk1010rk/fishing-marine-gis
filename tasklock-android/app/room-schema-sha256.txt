@@ -1,0 +1,4 @@
+# Room スキーマ JSON の SHA-256 固定値（DESIGN.md §9.6-2「スキーマ JSON の CI ガード」の C）
+# 形式は sha256sum と同じ「<SHA-256>  <tasklock-android からの相対パス>」。# で始まる行は無視する
+# 新しい版の JSON を追加する PR で1行追加する。main にマージされた後の行は変更しない
+5a3d8c8cc72904d497d3e04149020a44e946619d955d7f3df2b397a806910c1d  app/schemas/jp.tasklock.app.data.db.AppDatabase/1.json
