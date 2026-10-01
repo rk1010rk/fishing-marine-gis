@@ -760,6 +760,31 @@ DB v2（`emergency_unlocks`）と AutoMigration の実装と確認（2026-10-01 
   - 固定リストの Y!乗換案内: 既にロック対象に登録済みで「追加」として確認できないため。固定リストの判定は LINE で確認した
 - 証拠の区分: 判定ロジックは `ImportantAppsTest`（8件、`smsto:` を含む）、`:core` 全体はローカル実行で67件成功、CI は run #17 で `:core:test` と `:app:assembleDebug`（固定鍵の照合を含む）が成功（CI 上のテスト件数は未確認）
 
+### K. Room DB の v1→v2 上書き移行（§9.6-2）
+前提: 端末に v1 の DB を持つ版（データあり）が入っている。DB の読み取りは `adb exec-out run-as jp.tasklock.app cat databases/<ファイル>` で `tasklock.db`・`tasklock.db-wal`・`tasklock.db-shm` の3つを同じフォルダに取り出し、PC の Python の sqlite3 で読み取り専用（`mode=ro`）で開く（WAL に未反映の内容があるため、`tasklock.db` だけでは読めない）。端末内の DB には書き込まない
+
+| # | 手順 | 期待結果 |
+|---|---|---|
+| K-1 | 上書き前: `dumpsys package` で `firstInstallTime`・`lastUpdateTime` を記録し、DB ファイル一式を取り出して `PRAGMA user_version`・`room_master_table.identity_hash`・テーブル一覧・各テーブルの件数・有効なタスクを読む | `user_version` = 1、`identity_hash` が `1.json` の `2c89e8710c577c26a16b4db82968aa8f` と一致、`emergency_unlocks` がない |
+| K-2 | v2 の APK（CI のアーティファクト）を `adb install -r` で上書き | `Success`。`firstInstallTime` が変わらない |
+| K-3 | 上書き後: K-1 と同じ項目を読み、`emergency_unlocks` の定義も読む | `user_version` = 2、`identity_hash` が `2.json` の `15df984d9670ed1c41e33154275b1fa2` と一致、`emergency_unlocks` が設計どおりに追加され、既存6テーブルの件数・内容が K-1 と同じ |
+| K-4 | アプリを開く | 落ちずに起動し、既存のタスク・ロック対象の状態が表示され、ユーザー補助のオン・オフが変わらない |
+
+#### K の実機テスト結果（2026-10-01）
+- 端末: Pixel 9a / Android 17（ワイヤレス デバッグで再ペア設定して接続）。APK: CI run #36（`402b2a1`）の `tasklock-debug-apk`（`app-debug.apk`、11,198,160 バイト、SHA-256 `d9bc16a9…0950`）。署名は run #36 の照合で固定鍵（`1e6152d6…e090`）と確認済み。端末側での証明書の表示は行っていない（`keytool -printcert -jarfile` は v1 署名しか表示しないため出力なし）。上書きが成功したことは、既存の版と同じ鍵であることと矛盾しない
+- 移行前の版: `lastUpdateTime` 2026-09-27 22:20:58（項目3の版）、`firstInstallTime` 2026-09-27 21:33:04
+
+| ID | 結果 | 内容 |
+|---|---|---|
+| K-1 | OK | `user_version` = 1、`identity_hash` = `2c89e8710c577c26a16b4db82968aa8f`（`1.json` と一致）。テーブルは Room の6つと管理用（`android_metadata`・`room_master_table`・`sqlite_sequence`）で `emergency_unlocks` なし。件数は tasks 1・completions 3・verifications 3・lock_rules 1・locked_apps 0・unlock_grants 3、有効なタスクは `(1, '本を読む')`。DB ファイルは `tasklock.db` 4,096 バイト・`-wal` 226,632 バイト・`-shm` 32,768 バイト |
+| K-2 | OK | `adb install -r` → `Success`。`lastUpdateTime` 2026-10-01 21:28:54、`firstInstallTime` は 2026-09-27 21:33:04 のまま |
+| K-3 | OK | `user_version` = 2、`identity_hash` = `15df984d9670ed1c41e33154275b1fa2`（`2.json` と一致）。`emergency_unlocks` が追加され 0 件（`CREATE TABLE … (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, day TEXT NOT NULL, startedAt INTEGER NOT NULL, expiresAt INTEGER NOT NULL)`、索引 `index_emergency_unlocks_day` on `day`）。既存6テーブルの件数と有効なタスクは K-1 と同じ |
+| K-4 | OK | 落ちずに起動し、ホームに「10月1日のタスク」「本を読む（目標: 5ページ）」「完了を記録する」（今日は未達成）、「ロックするアプリが未設定です」を表示。「ブロック機能がオフです」は表示されなかった（ホームはユーザー補助がオフならこの表示を最優先で出すため、オンのままと判断） |
+
+- 移行の時点: アプリを開く前の、上書き直後（21:28）に DB ファイルが更新されていた（`tasklock.db` 73,728 バイト、`-wal` 0 バイト）。K-3 はこの状態を読んだもの。DB を開いたのは更新後に再開されたユーザー補助のサービス等と考えられるが、どの処理かは確認していない
+- `identity_hash` の一致は、端末の DB の実体を SQLite で読んで確認したもので、CI でのスキーマ JSON の照合（A・C）とは別の検証である。§9.6-2 の「実機の v1 DB の identity hash との照合（未実施）」は、K-1 で一致を確認した
+- 検証の対象外: ロック対象の保持（移行前の locked_apps が 0 件だったため。ロック対象は利用者が実用上の理由で事前に外しており、検証のために状態を作り直すことはしていない）。ブロックの動作そのもの（DB 移行とは別の検証項目として扱う）
+
 ### 確認できると良いメーカー差
 Pixel / Galaxy / Xiaomi 系で、B-2 の表示遅延とバックグラウンドでのサービス停止（省電力設定）を確認する。
 
