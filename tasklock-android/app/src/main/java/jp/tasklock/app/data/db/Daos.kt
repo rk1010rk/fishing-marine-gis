@@ -91,3 +91,20 @@ interface UnlockGrantDao {
     @Query("SELECT * FROM unlock_grants ORDER BY expiresAt DESC LIMIT 1")
     fun observeLatest(): Flow<UnlockGrantEntity?>
 }
+
+@Dao
+interface EmergencyUnlockDao {
+    @Insert
+    suspend fun insert(unlock: EmergencyUnlockEntity): Long
+
+    /** その日に開始した緊急解除の件数（1日の上限の判定に使う） */
+    @Query("SELECT COUNT(*) FROM emergency_unlocks WHERE day = :day")
+    suspend fun countForDay(day: String): Int
+
+    @Query("SELECT * FROM emergency_unlocks ORDER BY expiresAt DESC LIMIT 1")
+    suspend fun getLatest(): EmergencyUnlockEntity?
+
+    /** unlock_grants と同じく、日付に依らず期限の最も遅いものを監視する */
+    @Query("SELECT * FROM emergency_unlocks ORDER BY expiresAt DESC LIMIT 1")
+    fun observeLatest(): Flow<EmergencyUnlockEntity?>
+}

@@ -89,3 +89,17 @@ data class UnlockGrantEntity(
     val grantedAt: Long,
     val expiresAt: Long,
 )
+
+/**
+ * 緊急解除の記録（DESIGN.md §9.6-2）。タスク達成による解除（unlock_grants）とは別に持ち、
+ * 変更可否の判定（ChangePolicy・isLockedNow）には使わない。外部キーは持たない
+ */
+@Entity(tableName = "emergency_unlocks", indices = [Index("day")])
+data class EmergencyUnlockEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** 解除を開始した日（DayBoundary.dayOf(startedAt)）。1日の回数はこの列で数える */
+    val day: String,
+    val startedAt: Long,
+    /** 開始時に決めた期限。期限前の終了を後で採用しても書き換えない */
+    val expiresAt: Long,
+)
