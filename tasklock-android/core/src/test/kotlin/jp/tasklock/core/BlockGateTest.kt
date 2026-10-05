@@ -2,6 +2,7 @@ package jp.tasklock.core
 
 import jp.tasklock.core.lock.BlockGate
 import jp.tasklock.core.lock.BlockSnapshot
+import jp.tasklock.core.model.TemporaryUnlock
 import jp.tasklock.core.model.UnlockGrant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -92,5 +93,60 @@ class BlockGateTest {
         var calls = 0
         gate.onWindowEvent("com.other", now, 10) { calls++; emptySet() }
         assertEquals(0, calls)
+    }
+
+    // ---- 時刻だけが進んだときの再判定（一時解除の期限。DESIGN.md §9.6-2） ----
+
+    private val temporary = TemporaryUnlock(
+        day = LocalDate.of(2026, 9, 26), startedAt = now.minusSeconds(60), expiresAt = now.plusSeconds(540),
+    )
+    private val temporarilyUnlocked = BlockSnapshot(setOf("com.sns"), null, temporary)
+
+    @Test
+    fun `app used during temporary unlock is blocked when re-evaluated after expiry`() {
+        val gate = BlockGate(own)
+        gate.onSnapshot(temporarilyUnlocked, now, 0, noExempt)
+        assertFalse(gate.onWindowEvent("com.sns", now, 100, noExempt)) // 一時解除中は開ける
+        assertEquals("com.sns", gate.reevaluateForeground(temporary.expiresAt, 600_000, noExempt))
+    }
+
+    @Test
+    fun `re-evaluation before expiry does not block`() {
+        val gate = BlockGate(own)
+        gate.onSnapshot(temporarilyUnlocked, now, 0, noExempt)
+        gate.onWindowEvent("com.sns", now, 100, noExempt)
+        assertNull(gate.reevaluateForeground(temporary.expiresAt.minusMillis(1), 500_000, noExempt))
+    }
+
+    @Test
+    fun `repeated re-evaluation right after blocking is debounced`() {
+        val gate = BlockGate(own)
+        gate.onSnapshot(temporarilyUnlocked, now, 0, noExempt)
+        gate.onWindowEvent("com.sns", now, 100, noExempt)
+        assertEquals("com.sns", gate.reevaluateForeground(temporary.expiresAt, 600_000, noExempt))
+        assertNull(gate.reevaluateForeground(temporary.expiresAt, 600_100, noExempt))
+    }
+
+    @Test
+    fun `re-evaluation without foreground, before load, or for own and exempt apps does nothing`() {
+        val expired = temporary.expiresAt
+        // 前面アプリが未記録
+        val gate1 = BlockGate(own)
+        gate1.onSnapshot(temporarilyUnlocked, now, 0, noExempt)
+        assertNull(gate1.reevaluateForeground(expired, 600_000, noExempt))
+        // スナップショットが未ロード
+        val gate2 = BlockGate(own)
+        gate2.onWindowEvent("com.sns", now, 0, noExempt)
+        assertNull(gate2.reevaluateForeground(expired, 600_000, noExempt))
+        // 自アプリが前面
+        val gate3 = BlockGate(own)
+        gate3.onSnapshot(temporarilyUnlocked, now, 0, noExempt)
+        gate3.onWindowEvent(own, now, 100, noExempt)
+        assertNull(gate3.reevaluateForeground(expired, 600_000, noExempt))
+        // 除外アプリが前面
+        val gate4 = BlockGate(own)
+        gate4.onSnapshot(temporarilyUnlocked, now, 0, noExempt)
+        gate4.onWindowEvent("com.sns", now, 100, noExempt)
+        assertNull(gate4.reevaluateForeground(expired, 600_000) { setOf("com.sns") })
     }
 }
