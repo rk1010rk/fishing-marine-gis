@@ -39,6 +39,16 @@ class BlockGate(
         return foreground.takeIf { decide(it, now, nowMillis, exemptPackages) }
     }
 
+    /**
+     * 時刻だけが進んだとき（一時解除の期限など、DB が変わらない変化）に、記録している前面アプリを再判定する。
+     * いつ呼ぶかは呼び出し側が決める。
+     * @return 前面のアプリをブロックすべきならそのパッケージ名。未ロード・前面アプリ不明・ブロック不要なら null
+     */
+    fun reevaluateForeground(now: Instant, nowMillis: Long, exemptPackages: () -> Set<String>): String? {
+        val foreground = foregroundPackage ?: return null
+        return foreground.takeIf { decide(it, now, nowMillis, exemptPackages) }
+    }
+
     private fun decide(packageName: String, now: Instant, nowMillis: Long, exemptPackages: () -> Set<String>): Boolean {
         val snap = snapshot
         val block = snap != null &&
