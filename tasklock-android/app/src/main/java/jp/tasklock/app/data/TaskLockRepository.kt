@@ -11,6 +11,7 @@ import jp.tasklock.core.lock.UnlockDecision
 import jp.tasklock.core.model.Completion
 import jp.tasklock.core.model.Task
 import jp.tasklock.core.model.TaskCategory
+import jp.tasklock.core.model.TemporaryUnlock
 import jp.tasklock.core.model.UnlockGrant
 import jp.tasklock.core.model.Verification
 import jp.tasklock.core.model.VerificationMethod
@@ -22,21 +23,29 @@ import jp.tasklock.core.policy.ChangeResult
 import jp.tasklock.core.policy.LockNotice
 import jp.tasklock.core.policy.LockSelection
 import jp.tasklock.core.policy.LockSelectionDiff
+import jp.tasklock.core.policy.TemporaryUnlockDecision
+import jp.tasklock.core.policy.TemporaryUnlockPolicy
+import jp.tasklock.core.policy.TemporaryUnlockRejection
 import jp.tasklock.core.template.TaskTemplate
 import jp.tasklock.core.time.DayBoundary
 import jp.tasklock.core.verify.ReadingCheck
 import jp.tasklock.core.verify.Verifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Clock
 import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 
 data class TaskProgress(
@@ -50,9 +59,20 @@ data class TodayState(
     val tasks: List<TaskProgress>,
     val lockedApps: List<LockedAppEntity>,
     val grant: UnlockGrant?,
+    /** 有効な一時解除（無ければ null）。ブロックだけを止め、[locked] には影響しない（DESIGN.md §9.6-2） */
+    val temporary: TemporaryUnlock? = null,
+    /** この状態を作った時刻（一時解除の残り時間の計算に使う） */
+    val asOf: Instant = Instant.EPOCH,
 ) {
-    /** 画面表示用。変更可否の最終判定は Repository が DB から行う */
+    /** 画面表示用。変更可否の最終判定は Repository が DB から行う。一時解除中も「ロック中」 */
     val locked: Boolean get() = lockedApps.isNotEmpty() && grant == null
+
+    /** 一時解除の残り時間（分、切り上げ）。一時解除中でなければ null */
+    val temporaryRemainingMinutes: Long?
+        get() = temporary?.let { t ->
+            val millis = Duration.between(asOf, t.expiresAt).toMillis().coerceAtLeast(0)
+            (millis + 59_999) / 60_000
+        }
 
     val studyPackages: Set<String> get() = ChangePolicy.studyPackages(tasks.map { it.task })
 
@@ -65,6 +85,19 @@ data class CompletionInput(
     val startPage: Int? = null,
     val endPage: Int? = null,
     val note: String? = null,
+)
+
+/**
+ * ブロック画面に出す一時解除の情報。表示用の事前判定で、開始できるかどうかは
+ * [TaskLockRepository.startTemporaryUnlock] がトランザクション内で判定し直す
+ */
+data class TemporaryUnlockStatus(
+    /** 開始できない理由。null なら開始できる */
+    val rejection: TemporaryUnlockRejection?,
+    /** 今日あと何回開始できるか */
+    val remainingToday: Int,
+    /** 次に開始すると今月何回目になるか */
+    val nextNumberThisMonth: Int,
 )
 
 sealed interface CompletionResult {
@@ -97,8 +130,12 @@ class TaskLockRepository(
      * **null は「DB から未ロード」**であり「ロック対象なし」ではない。初回ロード後は null に戻らない。
      */
     val blockSnapshot: StateFlow<BlockSnapshot?> =
-        combine(db.lockedAppDao().observeAll(), db.unlockGrantDao().observeLatest()) { apps, grant ->
-            BlockSnapshot(apps.map { it.packageName }.toSet(), grant?.toModel())
+        combine(
+            db.lockedAppDao().observeAll(),
+            db.unlockGrantDao().observeLatest(),
+            db.emergencyUnlockDao().observeLatest(),
+        ) { apps, grant, temporary ->
+            BlockSnapshot(apps.map { it.packageName }.toSet(), grant?.toModel(), temporary?.toModel())
         }.stateIn(scope, SharingStarted.Eagerly, null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -120,8 +157,32 @@ class TaskLockRepository(
                 TaskProgress(model, completedToday = best.satisfies(model.requiredStatus), bestStatus = best)
             }
             TodayState(day, progress, apps, grant?.toModel()?.takeIf { it.isActiveAt(clock.instant()) })
-        }
+        }.combine(temporaryTicks) { state, tick -> state.copy(temporary = tick.active, asOf = tick.at) }
     }
+
+    private data class TemporaryTick(val active: TemporaryUnlock?, val at: Instant)
+
+    /**
+     * 有効な一時解除と現在時刻。期限が来ても DB は変わらず Flow が発火しないため、
+     * 一時解除が有効な間は30秒ごとと期限の時刻に自分で発火する（ホームの残り時間と、期限切れでの表示の切り替え）
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val temporaryTicks: Flow<TemporaryTick> =
+        db.emergencyUnlockDao().observeLatest().flatMapLatest { entity ->
+            val unlock = entity?.toModel()
+            flow {
+                while (true) {
+                    val now = clock.instant()
+                    if (unlock == null || !unlock.isActiveAt(now)) {
+                        emit(TemporaryTick(null, now))
+                        break
+                    }
+                    emit(TemporaryTick(unlock, now))
+                    val untilExpiry = Duration.between(now, unlock.expiresAt).toMillis()
+                    delay(minOf(TICK_MILLIS, untilExpiry + 1).coerceAtLeast(1))
+                }
+            }
+        }
 
     // ---- タスク設定 ----
     // 可否判定は ChangePolicy（:core）に集約し、ここでは DB の現在状態をトランザクション内で読んで渡す。
@@ -201,6 +262,61 @@ class TaskLockRepository(
         ).isLockedAt(clock.instant())
 
     private suspend fun activeTasks(): List<Task> = db.taskDao().getActive().map { it.toModel() }
+
+    // ---- 一時解除（DESIGN.md §9.6-2） ----
+    // 開始の可否は TemporaryUnlockPolicy（:core）が判定し、ここではトランザクション内で DB を読み直して渡す。
+    // 判定と記録を同じトランザクションで行うことが回数制限の正しさの根拠で、画面側の二度押し防止は補助にすぎない。
+
+    /** 一時解除を開始する。許可されたときだけ記録し、採番した id を付けて返す */
+    suspend fun startTemporaryUnlock(): TemporaryUnlockDecision = db.withTransaction {
+        when (val decision = decideTemporaryUnlock(clock.instant())) {
+            is TemporaryUnlockDecision.Allowed -> {
+                val id = db.emergencyUnlockDao().insert(decision.unlock.toEntity())
+                TemporaryUnlockDecision.Allowed(decision.unlock.copy(id = id))
+            }
+            is TemporaryUnlockDecision.Rejected -> decision
+        }
+    }
+
+    /** ブロック画面の表示用。開始の可否はここでは確定しない（[startTemporaryUnlock] が判定し直す） */
+    suspend fun temporaryUnlockStatus(): TemporaryUnlockStatus = db.withTransaction {
+        val now = clock.instant()
+        val today = boundary.dayOf(now)
+        val (from, to) = TemporaryUnlockPolicy.monthRange(today)
+        TemporaryUnlockStatus(
+            rejection = (decideTemporaryUnlock(now) as? TemporaryUnlockDecision.Rejected)?.reason,
+            remainingToday = TemporaryUnlockPolicy.remainingToday(
+                db.emergencyUnlockDao().countForDay(today.toString()),
+            ),
+            nextNumberThisMonth = db.emergencyUnlockDao().countBetween(from.toString(), to.toString()) + 1,
+        )
+    }
+
+    /**
+     * 開始した一時解除が [blockSnapshot]（アクセシビリティサービスが参照する）に反映されるのを待つ。
+     * 反映されないまま対象アプリを開くと、古いスナップショットで再びブロックされるため。
+     * それより新しい記録が現れた・期限が過ぎた・[TEMPORARY_SNAPSHOT_TIMEOUT_MILLIS] を過ぎた場合は待つのをやめる。
+     * @return 反映されたら true。false でも記録自体は保存済み（開始の失敗ではない）
+     */
+    suspend fun awaitTemporaryUnlockInSnapshot(unlock: TemporaryUnlock): Boolean {
+        val snapshot = withTimeoutOrNull(TEMPORARY_SNAPSHOT_TIMEOUT_MILLIS) {
+            blockSnapshot.first { snap ->
+                val current = snap?.temporary
+                (current != null && current.id >= unlock.id) || !unlock.isActiveAt(clock.instant())
+            }
+        }
+        return snapshot?.temporary?.id == unlock.id && unlock.isActiveAt(clock.instant())
+    }
+
+    private suspend fun decideTemporaryUnlock(now: Instant): TemporaryUnlockDecision =
+        TemporaryUnlockPolicy.decide(
+            now = now,
+            boundary = boundary,
+            lockedPackages = db.lockedAppDao().getPackages().toSet(),
+            grant = db.unlockGrantDao().getLatest()?.toModel(),
+            latest = db.emergencyUnlockDao().getLatest()?.toModel(),
+            startedToday = db.emergencyUnlockDao().countForDay(boundary.dayOf(now).toString()),
+        )
 
     // ---- 完了 → 検証 → 解除 ----
 
@@ -289,5 +405,13 @@ class TaskLockRepository(
             ),
         )
         return true
+    }
+
+    private companion object {
+        /** 一時解除中のホームの更新間隔（残り時間の表示） */
+        const val TICK_MILLIS = 30_000L
+
+        /** 開始した一時解除がスナップショットに反映されるのを待つ上限 */
+        const val TEMPORARY_SNAPSHOT_TIMEOUT_MILLIS = 3_000L
     }
 }

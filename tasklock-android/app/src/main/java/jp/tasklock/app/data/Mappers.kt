@@ -1,6 +1,7 @@
 package jp.tasklock.app.data
 
 import jp.tasklock.app.data.db.CompletionEntity
+import jp.tasklock.app.data.db.EmergencyUnlockEntity
 import jp.tasklock.app.data.db.LockRuleEntity
 import jp.tasklock.app.data.db.TaskEntity
 import jp.tasklock.app.data.db.UnlockGrantEntity
@@ -10,6 +11,7 @@ import jp.tasklock.core.model.LockRule
 import jp.tasklock.core.model.TargetUnit
 import jp.tasklock.core.model.Task
 import jp.tasklock.core.model.TaskCategory
+import jp.tasklock.core.model.TemporaryUnlock
 import jp.tasklock.core.model.UnlockGrant
 import jp.tasklock.core.model.Verification
 import jp.tasklock.core.model.VerificationMethod
@@ -98,6 +100,21 @@ fun UnlockGrantEntity.toModel() = UnlockGrant(
     completionId = completionId,
     grantedAt = Instant.ofEpochMilli(grantedAt),
     expiresAt = Instant.ofEpochMilli(expiresAt),
+)
+
+/** v2 の emergency_unlocks の1行は、現在の用語では一時解除（DESIGN.md §9.6-2） */
+fun EmergencyUnlockEntity.toModel() = TemporaryUnlock(
+    id = id,
+    day = LocalDate.parse(day),
+    startedAt = Instant.ofEpochMilli(startedAt),
+    expiresAt = Instant.ofEpochMilli(expiresAt),
+)
+
+fun TemporaryUnlock.toEntity() = EmergencyUnlockEntity(
+    id = id,
+    day = day.toString(),
+    startedAt = startedAt.toEpochMilli(),
+    expiresAt = expiresAt.toEpochMilli(),
 )
 
 private fun jsonToMap(json: String): Map<String, String> {

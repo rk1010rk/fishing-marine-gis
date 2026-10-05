@@ -91,8 +91,9 @@ data class UnlockGrantEntity(
 )
 
 /**
- * 緊急解除の記録（DESIGN.md §9.6-2）。タスク達成による解除（unlock_grants）とは別に持ち、
- * 変更可否の判定（ChangePolicy・isLockedNow）には使わない。外部キーは持たない
+ * 一時解除の記録（DESIGN.md §9.6-2。記録上の旧称は「緊急解除」で、表とクラスの名前は v3 で揃える）。
+ * タスク達成による解除（unlock_grants）とは別に持ち、変更可否の判定（ChangePolicy・isLockedNow）には使わない。
+ * 外部キーは持たない。:core のモデルは TemporaryUnlock
  */
 @Entity(tableName = "emergency_unlocks", indices = [Index("day")])
 data class EmergencyUnlockEntity(
