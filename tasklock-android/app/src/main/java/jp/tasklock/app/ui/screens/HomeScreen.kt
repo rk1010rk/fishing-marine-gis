@@ -94,9 +94,11 @@ private fun LockStatusCard(
 ) {
     val unlocked = today.grant != null
     val noApps = today.lockedApps.isEmpty()
+    // 一時解除中もロック中（タスクの追加・削除はできない）。ブロックだけが止まっている（DESIGN.md §9.6-2）
+    val temporaryMinutes = today.temporaryRemainingMinutes
     val container = when {
         !permissions.accessibilityEnabled || noApps -> MaterialTheme.colorScheme.surfaceVariant
-        unlocked -> MaterialTheme.colorScheme.secondaryContainer
+        unlocked || temporaryMinutes != null -> MaterialTheme.colorScheme.secondaryContainer
         else -> MaterialTheme.colorScheme.errorContainer
     }
     Card(colors = CardDefaults.cardColors(containerColor = container), modifier = Modifier.fillMaxWidth()) {
@@ -106,6 +108,8 @@ private fun LockStatusCard(
                     "ブロック機能がオフです" to "アプリをロックするには、ユーザー補助の設定でタスクロックをオンにしてください。"
                 noApps -> "ロックするアプリが未設定です" to "SNSやゲームなど、タスクが終わるまで開けないようにするアプリを選びましょう。"
                 unlocked -> "🔓 今日は解除済み" to "お疲れさまでした。${today.lockedApps.size}個のアプリを今日いっぱい使えます。"
+                temporaryMinutes != null ->
+                    "⏳ 一時解除中・残り${temporaryMinutes}分" to "期限が来ると、使用中でもロックに戻ります。"
                 else -> "🔒 ロック中" to "タスクを1つ終えると、${today.lockedApps.size}個のアプリが開けるようになります。"
             }
             Text(title, style = MaterialTheme.typography.titleMedium)

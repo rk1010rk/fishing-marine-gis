@@ -97,9 +97,13 @@ interface EmergencyUnlockDao {
     @Insert
     suspend fun insert(unlock: EmergencyUnlockEntity): Long
 
-    /** その日に開始した緊急解除の件数（1日の上限の判定に使う） */
+    /** その日に開始した一時解除の件数（1日の上限の判定に使う） */
     @Query("SELECT COUNT(*) FROM emergency_unlocks WHERE day = :day")
     suspend fun countForDay(day: String): Int
+
+    /** 開始した日が [from]〜[to]（両端を含む、yyyy-MM-dd）の一時解除の件数（「今月◯回目」に使う） */
+    @Query("SELECT COUNT(*) FROM emergency_unlocks WHERE day BETWEEN :from AND :to")
+    suspend fun countBetween(from: String, to: String): Int
 
     @Query("SELECT * FROM emergency_unlocks ORDER BY expiresAt DESC LIMIT 1")
     suspend fun getLatest(): EmergencyUnlockEntity?
