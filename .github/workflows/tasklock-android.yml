@@ -131,6 +131,13 @@ jobs:
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --console=plain --stacktrace
 
+      - name: TEST ONLY print generated AutoMigration 2->3
+        run: |
+          set -euo pipefail
+          files=$(find app/build/generated -name '*AutoMigration_2_3*' -type f)
+          if [ -z "$files" ]; then echo "::error::generated AutoMigration_2_3 not found"; exit 1; fi
+          for f in $files; do echo "== $f"; cat "$f"; done
+
       # 生成した APK が固定鍵で署名されていることを確認する。一致しなければジョブを失敗させる
       - name: Verify APK signing certificate
         run: |
