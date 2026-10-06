@@ -510,10 +510,64 @@ DB（v3 で行う。PR #14 の v2 は変更しない）
 - v3 で、一時解除の表の名前を `temporary_unlocks` に揃える。既存の v2 の表の名前を実際にどう変えるか（マイグレーションの方法）は、v3 の実装時に確定する
 - v3 で、緊急解除の記録の表を新設する（使った時刻と任意の理由）。`emergency_unlocks` という名前は使い回さない。表の名前と列は v3 の設計で決める
 - v3 で、緊急解除の時点のロック対象を復元候補として保存する仕組みを追加する。方法は v3 の設計で決める
+- （2026-10-06 追記）上の3点は、下の「v3 の DB 設計（2026-10-06 確定）」で確定した
 
 Android の前提（未確認。実装の前に公式ドキュメントで確かめる）
 - Android 13 以降は、通知を出すのに `POST_NOTIFICATIONS` の権限が必要
 - Android 14 以降は、出し続ける通知でも利用者がスワイプで消せる場合がある
+
+v3 の DB 設計（2026-10-06 確定）
+
+Room の版を v2 から v3 に上げる。既存の6テーブル（`tasks`・`completions`・`verifications`・`lock_rules`・`locked_apps`・`unlock_grants`）は変更しない。`1.json`・`2.json` とその固定値は main に入っているため変更しない。`3.json` は CI が生成したものを無加工で登録し、同じ PR で固定値を追加する（§9.6-2「スキーマ JSON の CI ガード」の C）
+
+| # | 変更 | 内容 |
+|---|---|---|
+| 1 | 表の名前の変更 | `emergency_unlocks` → `temporary_unlocks`（一時解除の記録。列とデータは変えない） |
+| 2 | 表の追加 | `emergency_stops`（緊急解除の記録） |
+| 3 | 表の追加 | `emergency_stop_apps`（緊急解除の時点のロック対象。復元候補） |
+
+1. `temporary_unlocks`（表の名前の変更）
+- マイグレーションは Room の AutoMigration（`from = 2, to = 3`）に `AutoMigrationSpec` を付け、`@RenameTable(fromTableName = "emergency_unlocks", toTableName = "temporary_unlocks")` で指定する。列（`id`・`day`・`startedAt`・`expiresAt`）と既存の行は変えない
+- Kotlin のクラス名も揃える（`EmergencyUnlockEntity` → `TemporaryUnlockEntity`、`EmergencyUnlockDao` → `TemporaryUnlockDao`）。:core のモデルは `TemporaryUnlock` のまま
+- 未確認: 索引の扱い。v2 の索引は `index_emergency_unlocks_day` で、v3 では Room が `index_temporary_unlocks_day` を求める見込み。AutoMigration が古い索引を作り直すかどうかは確認していない。生成されたマイグレーションのコードと、実機で移行した後の `sqlite_master` を確認するまで、索引が期待どおりになるとは扱わない。期待どおりでない場合の対応は、その結果を見て決める
+
+2. `emergency_stops`（緊急解除の記録）
+
+| 列 | 型（Room / SQLite） | NULL | 意味 |
+|---|---|---|---|
+| `id` | `Long` / `INTEGER` | 不可 | 主キー（自動採番） |
+| `day` | `String` / `TEXT` | 不可 | 緊急解除をした日（`yyyy-MM-dd`、`DayBoundary.dayOf(stoppedAt)`）。今月の回数はこの列で数える |
+| `stoppedAt` | `Long` / `INTEGER` | 不可 | 緊急解除をした時刻（epoch millis） |
+| `resumedAt` | `Long` / `INTEGER` | 可 | 「ロックを再開する」の確定で緊急解除から復帰した時刻。null の間は緊急解除中 |
+| `reason` | `String` / `TEXT` | 可 | 再開の確定のときに任意で入力した理由。入力しなければ null |
+
+- 索引は `day` のみ。入口（通知・ブロック画面）は記録しない（今の仕様で使わないため）
+- `resumedAt` は「`locked_apps` が空でなくなった時刻」ではなく、「緊急解除の状態から、項目6の『ロックを再開する』の確定で正式に復帰した時刻」とする
+
+3. `emergency_stop_apps`（復元候補）
+
+| 列 | 型（Room / SQLite） | NULL | 意味 |
+|---|---|---|---|
+| `stopId` | `Long` / `INTEGER` | 不可 | `emergency_stops.id` への外部キー（`ON DELETE CASCADE`） |
+| `packageName` | `String` / `TEXT` | 不可 | 緊急解除の時点のロック対象 |
+| `label` | `String` / `TEXT` | 不可 | その時点の表示名 |
+
+- 主キーは `(stopId, packageName)`。索引は `stopId`
+- 別の表にする理由: `locked_apps` に状態の列を足すと、「`locked_apps` が空 = ロック対象なし」という意味と、それを前提にした `BlockSnapshot`・`isLockedNow()`・`ChangePolicy` が複雑になるため。1列の JSON にまとめる案は、検索しにくいため採らない
+- 再開した後も行は消さず、履歴として残す
+
+状態と遷移
+- 緊急解除中 = `emergency_stops` に `resumedAt IS NULL` の行（有効な緊急解除）があること。有効な緊急解除は常に0件か1件で、これは DB の制約ではなく、開始と再開のトランザクションで保証する
+- 緊急解除の開始（1つのトランザクション）: ①有効な緊急解除があれば開始しない。`isLockedNow()` が false のとき（ロック対象が空、またはタスク達成による解除中）も開始しない（一時解除中は開始できる）②`emergency_stops` に `resumedAt = null` の行を追加し、`id` を得る ③その `id` で、今の `locked_apps` を `emergency_stop_apps` に写す ④`locked_apps` をすべて削除する。④は「ロック中はロック対象から外せない」（`ChangePolicy`）の意図した例外で、`ChangePolicy` を通さない
+- 緊急解除中の編集: ロック対象が空なので `isLockedNow()` は false になり、タスクとロック対象は通常どおり変更できる。画面のチェックは下書きで、DB には書き込まない（項目6のまま）
+- 緊急解除からの再開: 緊急解除中は、項目6の確定のボタンを「ロックを再開する」と表示し、確認画面で、確定するとロックが再開することと、理由の入力欄（任意）を出す。緊急解除中に `locked_apps` を空でなくできる経路は、この確定だけとする。確定のトランザクションで、`locked_apps` の反映と、有効な緊急解除の `resumedAt`・`reason` の更新を一緒に行う。確定の結果 `locked_apps` が空のままなら再開ではなく、`resumedAt` は null のまま
+- 「前のロック対象で再開」: 有効な緊急解除の `emergency_stop_apps` を下書きの初期値にして、同じ確認・確定の流れを通す。`applyLockSelection` は1件でも拒否されると何も反映しないため、下書きを作るときに、アンインストール済み・除外アプリ・学習アプリに設定されているアプリを除く
+- 再開すると有効な緊急解除が無くなるため、次の緊急解除を開始できる
+- 一時解除・タスク達成による解除・`ChangePolicy`・`LockEvaluator`・`BlockSnapshot` の判定は変えない。ロック対象が空なら、今のコードのまま「ロックしていない」になる
+
+確認の予定（未実施）
+- CI: C（`3.json` の固定値の照合）と A（ビルド後の差分）、`:app` のビルド、生成された AutoMigration のコードでの表の名前と索引の扱い
+- 実機: v2 の DB（一時解除の記録2行とロック対象を含む）から v3 への上書きインストール。`user_version`・`identity_hash`（`3.json` と一致するか）・表の一覧・`sqlite_master` の索引・既存の行の件数と内容（`temporary_unlocks` に2行が残るか）・新しい2つの表が空であること
 
 ### 3. 連絡・移動等の重要アプリに対する警告（確定）
 現在、電話アプリは除外されているが、SMS・LINE・地図・乗換案内など、緊急時や日常の連絡・移動に使うアプリはロック対象として選択できる。
