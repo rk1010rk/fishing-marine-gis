@@ -530,6 +530,7 @@ Room の版を v2 から v3 に上げる。既存の6テーブル（`tasks`・`c
 - マイグレーションは Room の AutoMigration（`from = 2, to = 3`）に `AutoMigrationSpec` を付け、`@RenameTable(fromTableName = "emergency_unlocks", toTableName = "temporary_unlocks")` で指定する。列（`id`・`day`・`startedAt`・`expiresAt`）と既存の行は変えない
 - Kotlin のクラス名も揃える（`EmergencyUnlockEntity` → `TemporaryUnlockEntity`、`EmergencyUnlockDao` → `TemporaryUnlockDao`）。:core のモデルは `TemporaryUnlock` のまま
 - 未確認: 索引の扱い。v2 の索引は `index_emergency_unlocks_day` で、v3 では Room が `index_temporary_unlocks_day` を求める見込み。AutoMigration が古い索引を作り直すかどうかは確認していない。生成されたマイグレーションのコードと、実機で移行した後の `sqlite_master` を確認するまで、索引が期待どおりになるとは扱わない。期待どおりでない場合の対応は、その結果を見て決める
+  - （2026-10-06 追記）確認した。生成された AutoMigration（CI run #43）は表を作り直し（`_new_temporary_unlocks` を作成 → 行を写す → `emergency_unlocks` を `DROP` → 名前を `temporary_unlocks` に変更）、`index_temporary_unlocks_day` を `CREATE INDEX` で作成する。古い索引を消す SQL は無く、`DROP TABLE` で表と一緒に消える。実機（§10 M の M-5）でも、移行後に `index_emergency_unlocks_day` が無く `index_temporary_unlocks_day` があった。詳細は下の「v3 の DB 実装と確認」
 
 2. `emergency_stops`（緊急解除の記録）
 
@@ -568,6 +569,30 @@ Room の版を v2 から v3 に上げる。既存の6テーブル（`tasks`・`c
 確認の予定（未実施）
 - CI: C（`3.json` の固定値の照合）と A（ビルド後の差分）、`:app` のビルド、生成された AutoMigration のコードでの表の名前と索引の扱い
 - 実機: v2 の DB（一時解除の記録2行とロック対象を含む）から v3 への上書きインストール。`user_version`・`identity_hash`（`3.json` と一致するか）・表の一覧・`sqlite_master` の索引・既存の行の件数と内容（`temporary_unlocks` に2行が残るか）・新しい2つの表が空であること
+- （2026-10-06 追記）上の確認は、下の「v3 の DB 実装と確認」と §10 M で行った
+
+v3 の DB 実装と確認（2026-10-06 の記録）
+- 実装（`ac34306`）: `EmergencyUnlockEntity`・`EmergencyUnlockDao` を `TemporaryUnlockEntity`・`TemporaryUnlockDao` にし、表の名前を `temporary_unlocks` にした（列と DAO のクエリの条件は変えず、表の名前だけを置き換えた）。`EmergencyStopEntity`（`emergency_stops`）・`EmergencyStopAppEntity`（`emergency_stop_apps`、外部キー `ON DELETE CASCADE`、主キー `(stopId, packageName)`、`stopId` の索引）・`EmergencyStopDao` を追加。`AppDatabase` を v3 にし、`AutoMigration(from = 2, to = 3, spec = Migration2To3::class)`（`@RenameTable(fromTableName = "emergency_unlocks", toTableName = "temporary_unlocks")`）を追加。`Mappers`・`TaskLockRepository` は名前の置き換えだけ。緊急解除の処理と画面はまだ無い
+- `3.json` の登録: CI が生成した `3.json` をアーティファクトから無加工でアップロードし（`e8ed93c`）、正しい場所へ移動（R100）して固定値を登録した（`a99f417`）。`3.json` は `version` 3、`identityHash` `90c455e06f755da92851b3871c5c7517`、SHA-256 `6c798b3321693076a977c3d4a3c3829e37fff741618c71ee453b9f55db5a189d`。表は既存の6つと `temporary_unlocks`・`emergency_stops`・`emergency_stop_apps`。`temporary_unlocks` の索引は `index_temporary_unlocks_day`
+- CI での実測結果（いずれも手動実行）
+
+| run | commit | 状態 | C | A | その他 |
+|---|---|---|---|---|---|
+| #41 | `ac34306` | v3 の実装のみ（`3.json` は未コミット） | success（`1.json: OK`、`2.json: OK`） | failure（未追跡の `3.json` を検出。想定どおり） | `:core unit tests`・ビルド・APK の署名照合・アップロードは success。ビルド後の `1.json`・`2.json` は固定値どおり、`3.json` の SHA-256 は `6c798b33…189d` |
+| #42 | `a99f417` | `3.json` と固定値を登録 | success（`1.json`・`2.json`・`3.json` すべて `OK`） | success（3つとも固定値どおり） | run 全体が success |
+| #43 | `2ca84f8`（確認用のブランチ `claude/tasklock-v3-migration-probe`。本来のブランチには入れていない） | #42 の内容に、生成された AutoMigration をログに出す手順を一時的に足したもの | success | success | ログに出た `AppDatabase_AutoMigration_2_3_Impl.kt` の内容は下のとおり |
+
+- 生成された AutoMigration（2→3、run #43 のログ）の `migrate()` は、次の順に実行する
+  1. `CREATE TABLE IF NOT EXISTS emergency_stops (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, day TEXT NOT NULL, stoppedAt INTEGER NOT NULL, resumedAt INTEGER, reason TEXT)` と `index_emergency_stops_day` の作成
+  2. `CREATE TABLE IF NOT EXISTS emergency_stop_apps (stopId INTEGER NOT NULL, packageName TEXT NOT NULL, label TEXT NOT NULL, PRIMARY KEY(stopId, packageName), FOREIGN KEY(stopId) REFERENCES emergency_stops(id) ON UPDATE NO ACTION ON DELETE CASCADE)` と `index_emergency_stop_apps_stopId` の作成
+  3. `_new_temporary_unlocks`（`temporary_unlocks` と同じ列）を作成し、`emergency_unlocks` から `id`・`day`・`startedAt`・`expiresAt` を写す
+  4. `DROP TABLE emergency_unlocks`
+  5. `ALTER TABLE _new_temporary_unlocks RENAME TO temporary_unlocks`
+  6. `CREATE INDEX IF NOT EXISTS index_temporary_unlocks_day ON temporary_unlocks (day)`
+  7. `Migration2To3` の `onPostMigrate`（中身なし）
+- 名前の変更は `ALTER TABLE emergency_unlocks RENAME` ではなく、表の作り直しで行われる。古い索引 `index_emergency_unlocks_day` を消す SQL は無く、`DROP TABLE` で表と一緒に消える
+- 確認用のブランチ: 手元のブランチは削除した。リモートのブランチは、この作業環境からは削除できなかった（`git push --delete` は接続が切れ、GitHub API は「Write access to this GitHub API path is not permitted through this proxy」で 403）。GitHub の画面から削除する
+- 実機での v2 → v3 の上書きインストールは §10 M に記録した
 
 ### 3. 連絡・移動等の重要アプリに対する警告（確定）
 現在、電話アプリは除外されているが、SMS・LINE・地図・乗換案内など、緊急時や日常の連絡・移動に使うアプリはロック対象として選択できる。
@@ -943,6 +968,38 @@ Room の版を v2 から v3 に上げる。既存の6テーブル（`tasks`・`c
 - 補足の観察（原因未確認、合否の判定には含めない）: ブロック画面の起動（`result code=0` または `2`）の約0.7〜0.8秒後に、もう1件の起動（`result code=3`）がログにある（21:59:27.389 → 21:59:28.184、22:18:57.878 → 22:18:58.697）。同じ形は一時解除を開始する前の通常のブロックにもある（21:48:50.746 → 21:48:51.470、22:01:50.769 → 22:01:51.655）ため、一時解除の実装によるものとは判断していない
 - 検証の対象外: 0時をまたぐ場合（:core の `TemporaryUnlockPolicyTest` で確認）。同時に2回開始した場合のトランザクションの直列化。L-6c
 - テストの後: 2回目の期限の後はロック中のまま。ロック対象（YouTube）の整理は、通常どおりタスクを達成して解除してから行う
+
+### M. Room DB の v2→v3 上書き移行（§9.6-2「v3 の DB 設計」）
+前提: 端末に v2 の DB を持つ版（データあり）が入っている。DB の読み取りは K と同じ方法（`tasklock.db`・`-wal`・`-shm` を取り出し、読み取り専用で開く）。移行の前に3つのファイルをバックアップとして残し、読むのはそのコピーにする。端末内の DB には書き込まない
+
+| # | 手順 | 期待結果 |
+|---|---|---|
+| M-0 | v3 の APK（CI のアーティファクト）をダウンロードし、zip の SHA-256 を CI のログの値と照合する | 一致する。一致しなければインストールしない |
+| M-1 | DB の3つのファイルを取り出してバックアップにし、それぞれの SHA-256 を記録する | 3つとも取り出せる |
+| M-2 | バックアップのコピーで、`PRAGMA user_version`・`room_master_table.identity_hash`・表と索引の一覧（`sqlite_master`）・各表の件数・一時解除の記録の全行・`sqlite_sequence` を読む。`dumpsys package` で `firstInstallTime`・`lastUpdateTime` を記録する | `user_version` = 2、`identity_hash` が `2.json` の `15df984d9670ed1c41e33154275b1fa2` と一致、`emergency_unlocks` と `index_emergency_unlocks_day` がある |
+| M-3 | v3 の APK を `adb install -r` で上書きする | `Success`。`firstInstallTime` が変わらない |
+| M-4 | アプリを開く | 落ちずに起動し、既存のタスクとロック対象の状態が表示される |
+| M-5 | 移行後の DB を取り出し、M-2 と同じ項目を読む | `user_version` = 3、`identity_hash` が `3.json` の `90c455e06f755da92851b3871c5c7517` と一致。`emergency_unlocks` と `index_emergency_unlocks_day` が無く、`temporary_unlocks` と `index_temporary_unlocks_day` がある。`temporary_unlocks` の行が M-2 の `emergency_unlocks` とすべての列で同じ。`emergency_stops`・`emergency_stop_apps` が空で、それぞれの索引がある。既存の6つの表の件数が M-2 と同じ。`sqlite_sequence` は値を記録する |
+| M-6 | （保留）一時解除を1回開始し、新しい行の `id` を読む | 次の採番の値を記録する |
+
+#### M の実機テスト結果（2026-10-06）
+- 端末: Pixel 9a / Android 17（ワイヤレス デバッグ。接続が `offline` になったため、ペア設定をやり直して接続した）
+- M-0: CI run #42（`a99f417`）の `tasklock-debug-apk`。zip の SHA-256 `ec4d4014…7613` が run #42 のログのアップロード時の値と一致。`app-debug.apk` は 11,230,928 バイト、SHA-256 `7f32c53a…9133`。署名は run #42 の照合で固定鍵（`1e6152d6…e090`）と確認済み
+- M-1: バックアップ（移行前、22:02 に取得）は `tasklock.db` 73,728 バイト（SHA-256 `12127581…0cef`）、`-wal` 32,992 バイト（`175d89c2…414b`）、`-shm` 32,768 バイト（`80f09db9…8f8e`）。M-2 と M-5 の後にも SHA-256 は変わっていない
+
+| ID | 結果 | 内容 |
+|---|---|---|
+| M-2 | OK | `user_version` = 2、`identity_hash` = `15df984d9670ed1c41e33154275b1fa2`。表は Room の7つ（`emergency_unlocks` を含む）と管理用（`android_metadata`・`room_master_table`・`sqlite_sequence`）。索引は `index_completions_day`・`index_completions_taskId`・`index_emergency_unlocks_day`・`index_unlock_grants_day`・`index_verifications_completionId`・`sqlite_autoindex_locked_apps_1`。件数は tasks 1・completions 3・verifications 3・lock_rules 1・locked_apps 1・unlock_grants 3・emergency_unlocks 2。`emergency_unlocks` は id 1（`day` 2026-10-05、`startedAt` 1791204567328、`expiresAt` 1791205167328）と id 2（2026-10-05、1791205336889、1791205936889）。`sqlite_sequence` は completions 3・emergency_unlocks 2・lock_rules 1・tasks 1・unlock_grants 3・verifications 3。`lastUpdateTime` 2026-10-05 21:42:11、`firstInstallTime` 2026-09-27 21:33:04 |
+| M-3 | OK | `adb install -r` → `Success`。`lastUpdateTime` 2026-10-06 22:05:01、`firstInstallTime` は 2026-09-27 21:33:04 のまま |
+| M-4 | OK | 22:05、落ちずに起動し、ホームに「10月6日のタスク」「🔒 ロック中」「タスクを1つ終えると、1個のアプリが開けるようになります。」、「本を読む」は「完了を記録する」（未達成）、「タスクを追加」「削除」は押せない。「ブロック機能がオフです」は表示されなかった |
+| M-5 | OK | `user_version` = 3、`identity_hash` = `90c455e06f755da92851b3871c5c7517`（`3.json` と一致）。表は `emergency_unlocks` が無く、`temporary_unlocks`・`emergency_stops`・`emergency_stop_apps` がある。索引は `index_emergency_unlocks_day` が無く、`index_temporary_unlocks_day`・`index_emergency_stops_day`・`index_emergency_stop_apps_stopId` がある（これらのほかに、M-2 と同じ索引と、下の `sqlite_autoindex_emergency_stop_apps_1` がある）。`temporary_unlocks` は id 1・id 2 の2行で、`day`・`startedAt`・`expiresAt` は M-2 の `emergency_unlocks` と同じ値。`emergency_stops`・`emergency_stop_apps` は0件。既存の6つの表の件数は M-2 と同じ。DB ファイルは `tasklock.db` 98,304 バイト・`-wal` 0 バイト |
+| M-6 | 保留 | 移行の検証に一時解除の操作による差分を入れないため、今回は行っていない |
+
+- `sqlite_sequence`（実測）: 移行後は completions 3・lock_rules 1・tasks 1・**temporary_unlocks 2**・unlock_grants 3・verifications 3 で、`emergency_unlocks` の行は無くなっていた。次に一時解除を記録したときの `id` は、SQLite の AUTOINCREMENT の決まりからは3になると考えられるが、M-6 を行っていないため実測していない
+- `sqlite_autoindex_emergency_stop_apps_1`（実測）: 移行後の `emergency_stop_apps` には、主キー `(stopId, packageName)` のために SQLite が自動で作る索引がある。`locked_apps` の `sqlite_autoindex_locked_apps_1` と同じ種類で、`3.json` の索引の一覧には含まれない
+- Room のスキーマ照合: M-4 でアプリが落ちずに起動し、ホームが DB を読んで表示したことから、移行後の照合は通ったと判断している（照合の結果そのものはログで確認していない）
+- `identity_hash` の一致と索引の有無は端末の DB の実体を SQLite で読んだもので、CI の A・C とは別の検証である
+- 検証の対象外: v1 から v3 への連続の移行（v1→v2 は §10 K で確認済み）。M-6。緊急解除の処理と画面（まだ無い）
 
 ### 確認できると良いメーカー差
 Pixel / Galaxy / Xiaomi 系で、B-2 の表示遅延とバックグラウンドでのサービス停止（省電力設定）を確認する。
