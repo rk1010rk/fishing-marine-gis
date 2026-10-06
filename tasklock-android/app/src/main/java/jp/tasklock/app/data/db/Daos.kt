@@ -93,22 +93,50 @@ interface UnlockGrantDao {
 }
 
 @Dao
-interface EmergencyUnlockDao {
+interface TemporaryUnlockDao {
     @Insert
-    suspend fun insert(unlock: EmergencyUnlockEntity): Long
+    suspend fun insert(unlock: TemporaryUnlockEntity): Long
 
     /** その日に開始した一時解除の件数（1日の上限の判定に使う） */
-    @Query("SELECT COUNT(*) FROM emergency_unlocks WHERE day = :day")
+    @Query("SELECT COUNT(*) FROM temporary_unlocks WHERE day = :day")
     suspend fun countForDay(day: String): Int
 
     /** 開始した日が [from]〜[to]（両端を含む、yyyy-MM-dd）の一時解除の件数（「今月◯回目」に使う） */
-    @Query("SELECT COUNT(*) FROM emergency_unlocks WHERE day BETWEEN :from AND :to")
+    @Query("SELECT COUNT(*) FROM temporary_unlocks WHERE day BETWEEN :from AND :to")
     suspend fun countBetween(from: String, to: String): Int
 
-    @Query("SELECT * FROM emergency_unlocks ORDER BY expiresAt DESC LIMIT 1")
-    suspend fun getLatest(): EmergencyUnlockEntity?
+    @Query("SELECT * FROM temporary_unlocks ORDER BY expiresAt DESC LIMIT 1")
+    suspend fun getLatest(): TemporaryUnlockEntity?
 
     /** unlock_grants と同じく、日付に依らず期限の最も遅いものを監視する */
-    @Query("SELECT * FROM emergency_unlocks ORDER BY expiresAt DESC LIMIT 1")
-    fun observeLatest(): Flow<EmergencyUnlockEntity?>
+    @Query("SELECT * FROM temporary_unlocks ORDER BY expiresAt DESC LIMIT 1")
+    fun observeLatest(): Flow<TemporaryUnlockEntity?>
+}
+
+@Dao
+interface EmergencyStopDao {
+    @Insert
+    suspend fun insert(stop: EmergencyStopEntity): Long
+
+    @Insert
+    suspend fun insertApps(apps: List<EmergencyStopAppEntity>)
+
+    /** 有効な緊急解除（resumedAt が null）。0件か1件のはずだが、2件以上を検出できるよう一覧で返す */
+    @Query("SELECT * FROM emergency_stops WHERE resumedAt IS NULL ORDER BY stoppedAt DESC")
+    suspend fun getActive(): List<EmergencyStopEntity>
+
+    @Query("SELECT * FROM emergency_stops WHERE resumedAt IS NULL ORDER BY stoppedAt DESC LIMIT 1")
+    fun observeActive(): Flow<EmergencyStopEntity?>
+
+    /** 再開の確定。まだ有効な行だけを更新し、更新した件数を返す（二重の再開を防ぐ） */
+    @Query("UPDATE emergency_stops SET resumedAt = :resumedAt, reason = :reason WHERE id = :id AND resumedAt IS NULL")
+    suspend fun markResumed(id: Long, resumedAt: Long, reason: String?): Int
+
+    /** その緊急解除の時点のロック対象（復元候補） */
+    @Query("SELECT * FROM emergency_stop_apps WHERE stopId = :stopId ORDER BY label")
+    suspend fun appsFor(stopId: Long): List<EmergencyStopAppEntity>
+
+    /** 緊急解除をした日が [from]〜[to]（両端を含む、yyyy-MM-dd）の件数（今月の回数に使う） */
+    @Query("SELECT COUNT(*) FROM emergency_stops WHERE day BETWEEN :from AND :to")
+    suspend fun countBetween(from: String, to: String): Int
 }
