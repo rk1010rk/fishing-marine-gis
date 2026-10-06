@@ -3,3 +3,4 @@
 # 新しい版の JSON を追加する PR で1行追加する。main にマージされた後の行は変更しない
 5a3d8c8cc72904d497d3e04149020a44e946619d955d7f3df2b397a806910c1d  app/schemas/jp.tasklock.app.data.db.AppDatabase/1.json
 8ccdce850d059756a96c8bd2976b1892e5f75c3127f3188d98ec87011cb34d64  app/schemas/jp.tasklock.app.data.db.AppDatabase/2.json
+6c798b3321693076a977c3d4a3c3829e37fff741618c71ee453b9f55db5a189d  app/schemas/jp.tasklock.app.data.db.AppDatabase/3.json

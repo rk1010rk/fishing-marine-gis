@@ -91,16 +91,54 @@ data class UnlockGrantEntity(
 )
 
 /**
- * 一時解除の記録（DESIGN.md §9.6-2。記録上の旧称は「緊急解除」で、表とクラスの名前は v3 で揃える）。
+ * 一時解除の記録（DESIGN.md §9.6-2）。v2 までの表の名前は emergency_unlocks（記録上の旧称は「緊急解除」）で、
+ * v3 で temporary_unlocks に揃えた（AppDatabase の Migration2To3）。
  * タスク達成による解除（unlock_grants）とは別に持ち、変更可否の判定（ChangePolicy・isLockedNow）には使わない。
  * 外部キーは持たない。:core のモデルは TemporaryUnlock
  */
-@Entity(tableName = "emergency_unlocks", indices = [Index("day")])
-data class EmergencyUnlockEntity(
+@Entity(tableName = "temporary_unlocks", indices = [Index("day")])
+data class TemporaryUnlockEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     /** 解除を開始した日（DayBoundary.dayOf(startedAt)）。1日の回数はこの列で数える */
     val day: String,
     val startedAt: Long,
     /** 開始時に決めた期限。期限前の終了を後で採用しても書き換えない */
     val expiresAt: Long,
+)
+
+/**
+ * 緊急解除の記録（DESIGN.md §9.6-2「v3 の DB 設計」）。resumedAt が null の行が有効な緊急解除で、
+ * 常に0件か1件（DB の制約ではなく、開始と再開のトランザクションで保証する）
+ */
+@Entity(tableName = "emergency_stops", indices = [Index("day")])
+data class EmergencyStopEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** 緊急解除をした日（DayBoundary.dayOf(stoppedAt)）。今月の回数はこの列で数える */
+    val day: String,
+    val stoppedAt: Long,
+    /** 項目6の「ロックを再開する」の確定で復帰した時刻。null の間は緊急解除中 */
+    val resumedAt: Long? = null,
+    /** 再開の確定のときに任意で入力した理由 */
+    val reason: String? = null,
+)
+
+/** 緊急解除の時点のロック対象（復元候補）。再開した後も履歴として残す */
+@Entity(
+    tableName = "emergency_stop_apps",
+    primaryKeys = ["stopId", "packageName"],
+    foreignKeys = [
+        ForeignKey(
+            entity = EmergencyStopEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["stopId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("stopId")],
+)
+data class EmergencyStopAppEntity(
+    val stopId: Long,
+    val packageName: String,
+    /** その時点の表示名 */
+    val label: String,
 )

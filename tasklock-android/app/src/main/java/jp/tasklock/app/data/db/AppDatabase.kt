@@ -3,8 +3,10 @@ package jp.tasklock.app.data.db
 import android.content.Context
 import androidx.room.AutoMigration
 import androidx.room.Database
+import androidx.room.RenameTable
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.AutoMigrationSpec
 import androidx.sqlite.db.SupportSQLiteDatabase
 import jp.tasklock.core.model.LockRule
 
@@ -16,12 +18,18 @@ import jp.tasklock.core.model.LockRule
         LockRuleEntity::class,
         LockedAppEntity::class,
         UnlockGrantEntity::class,
-        EmergencyUnlockEntity::class,
+        TemporaryUnlockEntity::class,
+        EmergencyStopEntity::class,
+        EmergencyStopAppEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
-    // v1→v2 は emergency_unlocks の追加だけ（DESIGN.md §9.6-2）。既存のテーブルとデータには触れない
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    // v1→v2 は emergency_unlocks の追加だけ。v2→v3 は emergency_unlocks の名前の変更（temporary_unlocks）と
+    // emergency_stops・emergency_stop_apps の追加（DESIGN.md §9.6-2）。既存のテーブルとデータには触れない
+    autoMigrations = [
+        AutoMigration(from = 1, to = 2),
+        AutoMigration(from = 2, to = 3, spec = Migration2To3::class),
+    ],
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun taskDao(): TaskDao
@@ -30,7 +38,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun lockRuleDao(): LockRuleDao
     abstract fun lockedAppDao(): LockedAppDao
     abstract fun unlockGrantDao(): UnlockGrantDao
-    abstract fun emergencyUnlockDao(): EmergencyUnlockDao
+    abstract fun temporaryUnlockDao(): TemporaryUnlockDao
+    abstract fun emergencyStopDao(): EmergencyStopDao
 
     companion object {
         fun build(context: Context): AppDatabase =
@@ -49,3 +58,7 @@ abstract class AppDatabase : RoomDatabase() {
                 .build()
     }
 }
+
+/** v2→v3: 一時解除の表の名前を temporary_unlocks に揃える（列とデータは変えない。DESIGN.md §9.6-2「v3 の DB 設計」） */
+@RenameTable(fromTableName = "emergency_unlocks", toTableName = "temporary_unlocks")
+class Migration2To3 : AutoMigrationSpec

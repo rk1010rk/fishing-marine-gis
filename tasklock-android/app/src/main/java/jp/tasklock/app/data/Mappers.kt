@@ -1,9 +1,9 @@
 package jp.tasklock.app.data
 
 import jp.tasklock.app.data.db.CompletionEntity
-import jp.tasklock.app.data.db.EmergencyUnlockEntity
 import jp.tasklock.app.data.db.LockRuleEntity
 import jp.tasklock.app.data.db.TaskEntity
+import jp.tasklock.app.data.db.TemporaryUnlockEntity
 import jp.tasklock.app.data.db.UnlockGrantEntity
 import jp.tasklock.app.data.db.VerificationEntity
 import jp.tasklock.core.model.Completion
@@ -102,15 +102,15 @@ fun UnlockGrantEntity.toModel() = UnlockGrant(
     expiresAt = Instant.ofEpochMilli(expiresAt),
 )
 
-/** v2 の emergency_unlocks の1行は、現在の用語では一時解除（DESIGN.md §9.6-2） */
-fun EmergencyUnlockEntity.toModel() = TemporaryUnlock(
+/** temporary_unlocks（v2 までは emergency_unlocks）の1行。一時解除（DESIGN.md §9.6-2） */
+fun TemporaryUnlockEntity.toModel() = TemporaryUnlock(
     id = id,
     day = LocalDate.parse(day),
     startedAt = Instant.ofEpochMilli(startedAt),
     expiresAt = Instant.ofEpochMilli(expiresAt),
 )
 
-fun TemporaryUnlock.toEntity() = EmergencyUnlockEntity(
+fun TemporaryUnlock.toEntity() = TemporaryUnlockEntity(
     id = id,
     day = day.toString(),
     startedAt = startedAt.toEpochMilli(),

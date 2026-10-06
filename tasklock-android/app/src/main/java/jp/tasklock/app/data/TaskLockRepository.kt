@@ -133,7 +133,7 @@ class TaskLockRepository(
         combine(
             db.lockedAppDao().observeAll(),
             db.unlockGrantDao().observeLatest(),
-            db.emergencyUnlockDao().observeLatest(),
+            db.temporaryUnlockDao().observeLatest(),
         ) { apps, grant, temporary ->
             BlockSnapshot(apps.map { it.packageName }.toSet(), grant?.toModel(), temporary?.toModel())
         }.stateIn(scope, SharingStarted.Eagerly, null)
@@ -168,7 +168,7 @@ class TaskLockRepository(
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private val temporaryTicks: Flow<TemporaryTick> =
-        db.emergencyUnlockDao().observeLatest().flatMapLatest { entity ->
+        db.temporaryUnlockDao().observeLatest().flatMapLatest { entity ->
             val unlock = entity?.toModel()
             flow {
                 while (true) {
@@ -271,7 +271,7 @@ class TaskLockRepository(
     suspend fun startTemporaryUnlock(): TemporaryUnlockDecision = db.withTransaction {
         when (val decision = decideTemporaryUnlock(clock.instant())) {
             is TemporaryUnlockDecision.Allowed -> {
-                val id = db.emergencyUnlockDao().insert(decision.unlock.toEntity())
+                val id = db.temporaryUnlockDao().insert(decision.unlock.toEntity())
                 TemporaryUnlockDecision.Allowed(decision.unlock.copy(id = id))
             }
             is TemporaryUnlockDecision.Rejected -> decision
@@ -286,9 +286,9 @@ class TaskLockRepository(
         TemporaryUnlockStatus(
             rejection = (decideTemporaryUnlock(now) as? TemporaryUnlockDecision.Rejected)?.reason,
             remainingToday = TemporaryUnlockPolicy.remainingToday(
-                db.emergencyUnlockDao().countForDay(today.toString()),
+                db.temporaryUnlockDao().countForDay(today.toString()),
             ),
-            nextNumberThisMonth = db.emergencyUnlockDao().countBetween(from.toString(), to.toString()) + 1,
+            nextNumberThisMonth = db.temporaryUnlockDao().countBetween(from.toString(), to.toString()) + 1,
         )
     }
 
@@ -314,8 +314,8 @@ class TaskLockRepository(
             boundary = boundary,
             lockedPackages = db.lockedAppDao().getPackages().toSet(),
             grant = db.unlockGrantDao().getLatest()?.toModel(),
-            latest = db.emergencyUnlockDao().getLatest()?.toModel(),
-            startedToday = db.emergencyUnlockDao().countForDay(boundary.dayOf(now).toString()),
+            latest = db.temporaryUnlockDao().getLatest()?.toModel(),
+            startedToday = db.temporaryUnlockDao().countForDay(boundary.dayOf(now).toString()),
         )
 
     // ---- 完了 → 検証 → 解除 ----
