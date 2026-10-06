@@ -1,12 +1,16 @@
 package jp.tasklock.app.data
 
 import jp.tasklock.app.data.db.CompletionEntity
+import jp.tasklock.app.data.db.EmergencyStopAppEntity
+import jp.tasklock.app.data.db.EmergencyStopEntity
 import jp.tasklock.app.data.db.LockRuleEntity
 import jp.tasklock.app.data.db.TaskEntity
 import jp.tasklock.app.data.db.TemporaryUnlockEntity
 import jp.tasklock.app.data.db.UnlockGrantEntity
 import jp.tasklock.app.data.db.VerificationEntity
 import jp.tasklock.core.model.Completion
+import jp.tasklock.core.model.EmergencyStop
+import jp.tasklock.core.model.EmergencyStopApp
 import jp.tasklock.core.model.LockRule
 import jp.tasklock.core.model.TargetUnit
 import jp.tasklock.core.model.Task
@@ -116,6 +120,25 @@ fun TemporaryUnlock.toEntity() = TemporaryUnlockEntity(
     startedAt = startedAt.toEpochMilli(),
     expiresAt = expiresAt.toEpochMilli(),
 )
+
+/** emergency_stops の1行。緊急解除（DESIGN.md §9.6-2「v3 の DB 設計」） */
+fun EmergencyStopEntity.toModel() = EmergencyStop(
+    id = id,
+    day = LocalDate.parse(day),
+    stoppedAt = Instant.ofEpochMilli(stoppedAt),
+    resumedAt = resumedAt?.let(Instant::ofEpochMilli),
+    reason = reason,
+)
+
+fun EmergencyStop.toEntity() = EmergencyStopEntity(
+    id = id,
+    day = day.toString(),
+    stoppedAt = stoppedAt.toEpochMilli(),
+    resumedAt = resumedAt?.toEpochMilli(),
+    reason = reason,
+)
+
+fun EmergencyStopAppEntity.toModel() = EmergencyStopApp(stopId = stopId, packageName = packageName, label = label)
 
 private fun jsonToMap(json: String): Map<String, String> {
     val obj = runCatching { JSONObject(json) }.getOrNull() ?: return emptyMap()

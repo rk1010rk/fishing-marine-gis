@@ -34,6 +34,7 @@ import androidx.lifecycle.lifecycleScope
 import jp.tasklock.app.TaskLockApp
 import jp.tasklock.app.data.TemporaryUnlockStatus
 import jp.tasklock.app.ui.theme.TaskLockTheme
+import jp.tasklock.core.policy.EmergencyStopDecision
 import jp.tasklock.core.policy.TemporaryUnlockDecision
 import jp.tasklock.core.policy.TemporaryUnlockPolicy
 import jp.tasklock.core.policy.TemporaryUnlockRejection
@@ -46,6 +47,8 @@ import kotlinx.coroutines.launch
  *
  * 一時解除（DESIGN.md §9.6-2）の入口はこの画面だけ。表示は案内で、開始できるかどうかは
  * Repository がトランザクション内で判定し直す。
+ * 緊急解除の入口（一時解除とは別）もこの画面に置く。確認・待ち時間はなく、1回押すとロック対象をすべて外し、
+ * ブロックしていたアプリを開き直す（DESIGN.md §9.6-2「一時解除と緊急解除」）。
  */
 class BlockActivity : ComponentActivity() {
 
@@ -103,6 +106,7 @@ class BlockActivity : ComponentActivity() {
                     },
                     onCancelTemporaryUnlock = { confirming = false },
                     onStartTemporaryUnlock = ::startTemporaryUnlock,
+                    onEmergencyStop = ::startEmergencyStop,
                 )
             }
         }
@@ -167,6 +171,38 @@ class BlockActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * 緊急解除を開始する。一時解除の開始と [starting] を共用し、処理中は二度押しと戻る操作を受け付けない。
+     * 開始できるかどうかは Repository がトランザクション内で判定する
+     */
+    private fun startEmergencyStop() {
+        if (starting) return
+        starting = true
+        notice = null
+        lifecycleScope.launch {
+            when (val decision = repository.startEmergencyStop()) {
+                is EmergencyStopDecision.Allowed -> {
+                    if (repository.awaitEmergencyStopInSnapshot()) {
+                        openBlockedApp()
+                    } else {
+                        // 記録は保存済みなので、開始の失敗として扱わない（やり直させない）
+                        Toast.makeText(
+                            this@BlockActivity,
+                            "緊急解除しました。もう一度アプリを開いてください",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                        goHome()
+                    }
+                }
+                is EmergencyStopDecision.Rejected -> {
+                    notice = decision.reason.message
+                    starting = false
+                    status = repository.temporaryUnlockStatus()
+                }
+            }
+        }
+    }
+
     /** ブロックしていたアプリを開き直す。起動用のインテントが無ければ画面を閉じるだけ */
     private fun openBlockedApp() {
         packageManager.getLaunchIntentForPackage(blockedPackage)
@@ -200,6 +236,7 @@ private fun BlockScreen(
     onRequestTemporaryUnlock: () -> Unit,
     onCancelTemporaryUnlock: () -> Unit,
     onStartTemporaryUnlock: () -> Unit,
+    onEmergencyStop: () -> Unit,
 ) {
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Column(
@@ -210,7 +247,7 @@ private fun BlockScreen(
             if (confirming && status != null) {
                 TemporaryUnlockConfirm(status, starting, waitStartedAt, onCancelTemporaryUnlock, onStartTemporaryUnlock)
             } else {
-                Blocked(appLabel, status, notice, onOpenTasks, onGoHome, onRequestTemporaryUnlock)
+                Blocked(appLabel, status, notice, starting, onOpenTasks, onGoHome, onRequestTemporaryUnlock, onEmergencyStop)
             }
         }
     }
@@ -221,9 +258,11 @@ private fun Blocked(
     appLabel: String,
     status: TemporaryUnlockStatus?,
     notice: String?,
+    starting: Boolean,
     onOpenTasks: () -> Unit,
     onGoHome: () -> Unit,
     onRequestTemporaryUnlock: () -> Unit,
+    onEmergencyStop: () -> Unit,
 ) {
     Text("🔒", style = MaterialTheme.typography.displayLarge)
     Spacer(Modifier.height(16.dp))
@@ -258,6 +297,8 @@ private fun Blocked(
             )
         else -> Unit
     }
+    // 緊急解除の入口。一時解除の入口とは別に、ブロック画面では常に出す（押す前に回数などは表示しない）
+    TextButton(onClick = onEmergencyStop, enabled = !starting) { Text("緊急解除（ロックを止める）") }
     if (notice != null && notice != status?.rejection?.message) {
         Spacer(Modifier.height(8.dp))
         Text(notice, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)

@@ -46,6 +46,8 @@ fun LockedAppsScreen(
     lockedPackages: Set<String>,
     studyPackages: Set<String>,
     locked: Boolean,
+    /** 緊急解除中。確定のボタンを「ロックを再開する」と表示する（DESIGN.md §9.6-2「v3 の DB 設計」） */
+    emergencyStopped: Boolean,
     accessibilityEnabled: Boolean,
     onEnableBlocking: () -> Unit,
     onNeedConfirmation: () -> Unit,
@@ -95,6 +97,13 @@ fun LockedAppsScreen(
                         "ロック中は、登録済みのアプリを外せません。",
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                if (emergencyStopped) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "緊急解除中です。ロック対象を選んで「ロックを再開する」を押すと、ロックが再開します。",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
                 if (!accessibilityEnabled) {
                     Spacer(Modifier.height(8.dp))
                     Column {
@@ -154,7 +163,7 @@ fun LockedAppsScreen(
                 },
                 enabled = draft != null,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("確定") }
+            ) { Text(if (emergencyStopped) "ロックを再開する" else "確定") }
         }
     }
 }

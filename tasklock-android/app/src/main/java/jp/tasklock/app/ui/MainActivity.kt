@@ -68,6 +68,14 @@ class MainActivity : ComponentActivity() {
         val snackbar = remember { SnackbarHostState() }
         var disclosureReturnTo by rememberSaveable { mutableStateOf(false) }
 
+        // 緊急解除中の「前のロック対象で再開」の候補の数（表示用。押したときに読み直す）
+        var restoreCount by remember { mutableStateOf(0) }
+        val emergencyStopId = today?.emergencyStop?.id
+        val studyPackages = today?.studyPackages
+        LaunchedEffect(emergencyStopId, studyPackages) {
+            restoreCount = if (emergencyStopId == null) 0 else vm.restoreCandidates().size
+        }
+
         LaunchedEffect(message) {
             message?.let {
                 snackbar.showSnackbar(it)
@@ -97,6 +105,9 @@ class MainActivity : ComponentActivity() {
                     onDeleteTask = vm::deactivateTask,
                     onLockedApps = { openLockedApps() },
                     onEnableBlocking = { screen = Screen.AccessibilityDisclosure },
+                    restoreCount = restoreCount,
+                    // 確認画面へ直接進む（DESIGN.md §9.6-2「再開」）。戻るとロック対象の画面で下書きを直せる
+                    onRestoreLock = { vm.beginRestoreSelection(onReady = { screen = Screen.LockConfirm }) },
                     modifier = modifier,
                 )
                 is Screen.TaskSetup -> TaskSetupScreen(
@@ -133,6 +144,7 @@ class MainActivity : ComponentActivity() {
                     lockedPackages = today?.lockedApps?.map { it.packageName }?.toSet().orEmpty(),
                     studyPackages = today?.studyPackages.orEmpty(),
                     locked = today?.locked == true,
+                    emergencyStopped = today?.emergencyStop != null,
                     accessibilityEnabled = permissions.accessibilityEnabled,
                     onEnableBlocking = {
                         disclosureReturnTo = true
@@ -146,6 +158,7 @@ class MainActivity : ComponentActivity() {
                     vm = vm,
                     draft = lockDraft,
                     savedLabels = today?.lockedApps?.associate { it.packageName to it.label }.orEmpty(),
+                    resuming = today?.emergencyStop != null,
                     onBack = { screen = Screen.LockedApps },
                     onApplied = { screen = Screen.Home },
                     modifier = modifier,

@@ -40,6 +40,9 @@ fun HomeScreen(
     onDeleteTask: (Long) -> Unit,
     onLockedApps: () -> Unit,
     onEnableBlocking: () -> Unit,
+    /** 緊急解除中の「前のロック対象で再開」の候補の数。0 ならボタンを出さない */
+    restoreCount: Int,
+    onRestoreLock: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (today == null) return
@@ -54,7 +57,7 @@ fun HomeScreen(
                 style = MaterialTheme.typography.headlineSmall,
             )
         }
-        item { LockStatusCard(today, permissions, onLockedApps, onEnableBlocking) }
+        item { LockStatusCard(today, permissions, onLockedApps, onEnableBlocking, restoreCount, onRestoreLock) }
 
         if (today.tasks.isEmpty()) {
             item {
@@ -91,6 +94,8 @@ private fun LockStatusCard(
     permissions: PermissionState,
     onLockedApps: () -> Unit,
     onEnableBlocking: () -> Unit,
+    restoreCount: Int,
+    onRestoreLock: () -> Unit,
 ) {
     val unlocked = today.grant != null
     val noApps = today.lockedApps.isEmpty()
@@ -121,6 +126,12 @@ private fun LockStatusCard(
                     Button(onClick = onEnableBlocking) { Text("オンにする") }
                 }
                 TextButton(onClick = onLockedApps) { Text(if (noApps) "アプリを選ぶ" else "ロック対象を見る") }
+            }
+            // 緊急解除中は「ロックするアプリが未設定です」のまま、前のロック対象での再開を出す（DESIGN.md §9.6-2）
+            if (noApps && today.emergencyStop != null && restoreCount > 0) {
+                Button(onClick = onRestoreLock, modifier = Modifier.fillMaxWidth()) {
+                    Text("前のロック対象（${restoreCount}個）でロックを再開")
+                }
             }
         }
     }

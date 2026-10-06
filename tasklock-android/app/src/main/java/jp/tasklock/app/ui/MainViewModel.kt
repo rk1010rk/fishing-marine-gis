@@ -9,6 +9,7 @@ import jp.tasklock.app.data.CompletionResult
 import jp.tasklock.app.data.TodayState
 import jp.tasklock.app.platform.AccessibilityStatus
 import jp.tasklock.app.platform.AppInfo
+import jp.tasklock.core.model.EmergencyStopApp
 import jp.tasklock.core.model.Task
 import jp.tasklock.core.policy.ChangeResult
 import jp.tasklock.core.policy.ImportantApps
@@ -107,6 +108,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _lockDraft.value = null
     }
 
+    // ---- 緊急解除からの再開（DESIGN.md §9.6-2「v3 の DB 設計」） ----
+
+    /** 「前のロック対象で再開」の候補。緊急解除中でなければ空 */
+    suspend fun restoreCandidates(): List<EmergencyStopApp> = withContext(Dispatchers.IO) {
+        val installed = container.installedApps.launchableApps(includeDefaultSms = true).map { it.packageName }.toSet()
+        repository.restoreCandidates(installed)
+    }
+
+    /**
+     * ホームの「前のロック対象で再開」。押した時点の候補を読み直して下書きの初期値にし、[onReady] で確認画面へ進む。
+     * DB には書き込まない（反映は確認画面の確定だけ）。候補が無いときや、保存済みの状態が未ロードのときは進まない
+     */
+    fun beginRestoreSelection(onReady: () -> Unit) {
+        viewModelScope.launch {
+            val candidates = restoreCandidates()
+            val loaded = today.value ?: return@launch
+            if (candidates.isEmpty()) {
+                _message.value = "再開に使える前のロック対象がありません。ロック対象を選んでください"
+                return@launch
+            }
+            val saved = loaded.lockedApps.associate { it.packageName to it.label }
+            _lockDraft.value = LockDraft(
+                selected = saved.keys + candidates.map { it.packageName },
+                labels = saved + candidates.associate { it.packageName to it.label },
+            )
+            onReady()
+        }
+    }
+
     suspend fun previewLockNotice(diff: LockSelectionDiff): LockNotice = repository.previewLockNotice(diff)
 
     /** 確認画面の「重要なアプリに関する警告」の対象（§9.6-3）。追加するアプリだけを判定し、DB には触れない */
@@ -126,11 +156,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
-    /** 確認画面の「確定」。ここで初めて追加を DB とロック状態に反映する。拒否されたときは [onRejected] を呼ぶ */
-    fun applyConfirmedLockSelection(onApplied: () -> Unit, onRejected: () -> Unit = {}) =
-        applyDiff(lockSelectionDiff(), onApplied, onRejected)
+    /**
+     * 確認画面の「確定」。ここで初めて追加を DB とロック状態に反映する。拒否されたときは [onRejected] を呼ぶ。
+     * [reason] は緊急解除からの再開の理由（任意）で、確認画面が再開として表示したときだけ渡す
+     */
+    fun applyConfirmedLockSelection(onApplied: () -> Unit, onRejected: () -> Unit = {}, reason: String? = null) =
+        applyDiff(lockSelectionDiff(), onApplied, onRejected, reason)
 
-    private fun applyDiff(diff: LockSelectionDiff, onApplied: () -> Unit, onRejected: () -> Unit = {}) {
+    private fun applyDiff(
+        diff: LockSelectionDiff,
+        onApplied: () -> Unit,
+        onRejected: () -> Unit = {},
+        reason: String? = null,
+    ) {
         if (diff.isEmpty) {
             onApplied()
             discardLockSelection()
@@ -141,6 +179,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val result = repository.applyLockSelection(
                 added = diff.added.associateWith { labels[it] ?: it },
                 removed = diff.removed,
+                reason = reason,
             )
             // 拒否されたときは下書きを残し、理由を表示する
             if (result == ChangeResult.Ok) {
