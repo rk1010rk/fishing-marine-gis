@@ -40,6 +40,7 @@ fun HomeScreen(
     onDeleteTask: (Long) -> Unit,
     onLockedApps: () -> Unit,
     onEnableBlocking: () -> Unit,
+    onEnableNotifications: () -> Unit,
     /** 緊急解除中の「前のロック対象で再開」の候補の数。0 ならボタンを出さない */
     restoreCount: Int,
     onRestoreLock: () -> Unit,
@@ -57,7 +58,9 @@ fun HomeScreen(
                 style = MaterialTheme.typography.headlineSmall,
             )
         }
-        item { LockStatusCard(today, permissions, onLockedApps, onEnableBlocking, restoreCount, onRestoreLock) }
+        item {
+            LockStatusCard(today, permissions, onLockedApps, onEnableBlocking, onEnableNotifications, restoreCount, onRestoreLock)
+        }
 
         if (today.tasks.isEmpty()) {
             item {
@@ -94,6 +97,7 @@ private fun LockStatusCard(
     permissions: PermissionState,
     onLockedApps: () -> Unit,
     onEnableBlocking: () -> Unit,
+    onEnableNotifications: () -> Unit,
     restoreCount: Int,
     onRestoreLock: () -> Unit,
 ) {
@@ -132,6 +136,15 @@ private fun LockStatusCard(
                 Button(onClick = onRestoreLock, modifier = Modifier.fillMaxWidth()) {
                     Text("前のロック対象（${restoreCount}個）でロックを再開")
                 }
+            }
+            // 緊急解除の通知を出せないときだけ出す。オンにしなくても、ブロック画面から緊急解除できる（DESIGN.md §9.6-2）
+            if (permissions.accessibilityEnabled && !permissions.notificationsEnabled) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "通知をオンにすると、ロック中に通知から緊急解除できます。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                TextButton(onClick = onEnableNotifications) { Text("通知をオンにする") }
             }
         }
     }

@@ -7,6 +7,9 @@
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
+    <!-- 緊急解除の入口の通知（DESIGN.md §9.6-2）。Android 13 以降は利用者がホームの「通知をオンにする」で許可する -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!--
         ロック対象の選択にはランチャーに表示されるアプリだけが必要。
         QUERY_ALL_PACKAGES（Play で審査対象の制限付き権限）は使わず、<queries> で範囲を限定する。
@@ -76,5 +79,10 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <!-- 緊急解除の通知の「緊急解除」と、通知を消したことを受け取る。通知の PendingIntent からだけ呼ばれる -->
+        <receiver
+            android:name=".service.EmergencyNotificationReceiver"
+            android:exported="false" />
     </application>
 </manifest>
