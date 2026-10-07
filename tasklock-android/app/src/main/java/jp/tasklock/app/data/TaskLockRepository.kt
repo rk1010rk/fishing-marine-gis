@@ -60,6 +60,19 @@ data class TaskProgress(
     val bestStatus: VerificationStatus,
 )
 
+/**
+ * ホームの「今月：タスク達成◯日 / 一時解除◯回 / 緊急解除◯回」（DESIGN.md §9.6-2「共通の表示」）。
+ * 「今月」は DayBoundary の日付が属する暦の月（一時解除の確認画面の「今月◯回目」と同じ数え方）
+ */
+data class MonthlyCounts(
+    /** タスク達成による解除の記録がある日の数 */
+    val taskDays: Int,
+    /** 開始した日が今月の一時解除の回数 */
+    val temporaryUnlocks: Int,
+    /** 開始した日が今月の緊急解除の回数（再開したかどうかに関係なく数える） */
+    val emergencyStops: Int,
+)
+
 data class TodayState(
     val day: LocalDate,
     val tasks: List<TaskProgress>,
@@ -74,6 +87,8 @@ data class TodayState(
      * 緊急解除中はロック対象が空なので、[locked] は false になる（DESIGN.md §9.6-2「v3 の DB 設計」）
      */
     val emergencyStop: EmergencyStop? = null,
+    /** 今月の回数（表示用）。未ロードの間は null */
+    val monthly: MonthlyCounts? = null,
 ) {
     /** 画面表示用。変更可否の最終判定は Repository が DB から行う。一時解除中も「ロック中」 */
     val locked: Boolean get() = lockedApps.isNotEmpty() && grant == null
@@ -170,6 +185,17 @@ class TaskLockRepository(
             TodayState(day, progress, apps, grant?.toModel()?.takeIf { it.isActiveAt(clock.instant()) })
         }.combine(temporaryTicks) { state, tick -> state.copy(temporary = tick.active, asOf = tick.at) }
             .combine(db.emergencyStopDao().observeActive()) { state, stop -> state.copy(emergencyStop = stop?.toModel()) }
+            .combine(monthlyCounts(day)) { state, monthly -> state.copy(monthly = monthly) }
+    }
+
+    /** [day] が属する月の回数。日付が変わると todayState ごと作り直されるため、月の範囲も読み直される */
+    private fun monthlyCounts(day: LocalDate): Flow<MonthlyCounts> {
+        val (from, to) = TemporaryUnlockPolicy.monthRange(day)
+        return combine(
+            db.unlockGrantDao().observeDaysBetween(from.toString(), to.toString()),
+            db.temporaryUnlockDao().observeCountBetween(from.toString(), to.toString()),
+            db.emergencyStopDao().observeCountBetween(from.toString(), to.toString()),
+        ) { taskDays, temporaryUnlocks, emergencyStops -> MonthlyCounts(taskDays, temporaryUnlocks, emergencyStops) }
     }
 
     private data class TemporaryTick(val active: TemporaryUnlock?, val at: Instant)

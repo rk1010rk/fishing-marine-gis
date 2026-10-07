@@ -98,6 +98,10 @@ interface UnlockGrantDao {
     /** 日付をまたいでも有効期限で判定できるよう、日付に依らず最新のものを監視する */
     @Query("SELECT * FROM unlock_grants ORDER BY expiresAt DESC LIMIT 1")
     fun observeLatest(): Flow<UnlockGrantEntity?>
+
+    /** 解除の記録がある日（タスクを達成した日）が [from]〜[to]（両端を含む、yyyy-MM-dd）にいくつあるか（今月の表示に使う） */
+    @Query("SELECT COUNT(DISTINCT day) FROM unlock_grants WHERE day BETWEEN :from AND :to")
+    fun observeDaysBetween(from: String, to: String): Flow<Int>
 }
 
 @Dao
@@ -112,6 +116,10 @@ interface TemporaryUnlockDao {
     /** 開始した日が [from]〜[to]（両端を含む、yyyy-MM-dd）の一時解除の件数（「今月◯回目」に使う） */
     @Query("SELECT COUNT(*) FROM temporary_unlocks WHERE day BETWEEN :from AND :to")
     suspend fun countBetween(from: String, to: String): Int
+
+    /** [countBetween] の監視版（ホームの今月の表示に使う） */
+    @Query("SELECT COUNT(*) FROM temporary_unlocks WHERE day BETWEEN :from AND :to")
+    fun observeCountBetween(from: String, to: String): Flow<Int>
 
     @Query("SELECT * FROM temporary_unlocks ORDER BY expiresAt DESC LIMIT 1")
     suspend fun getLatest(): TemporaryUnlockEntity?
@@ -147,4 +155,8 @@ interface EmergencyStopDao {
     /** 緊急解除をした日が [from]〜[to]（両端を含む、yyyy-MM-dd）の件数（今月の回数に使う） */
     @Query("SELECT COUNT(*) FROM emergency_stops WHERE day BETWEEN :from AND :to")
     suspend fun countBetween(from: String, to: String): Int
+
+    /** [countBetween] の監視版（ホームの今月の表示に使う）。再開したかどうかに関係なく、開始した日で数える */
+    @Query("SELECT COUNT(*) FROM emergency_stops WHERE day BETWEEN :from AND :to")
+    fun observeCountBetween(from: String, to: String): Flow<Int>
 }
