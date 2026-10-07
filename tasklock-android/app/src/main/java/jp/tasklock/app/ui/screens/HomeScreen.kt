@@ -119,11 +119,15 @@ private fun LockStatusCard(
     // 除外の一覧が未取得の間（初回の onResume より前）は、登録済みの数をそのまま使う
     val lockedCount = exemptPackages?.let { exempt -> today.lockedApps.count { it.packageName !in exempt } }
         ?: today.lockedApps.size
+    // 登録はあるが、すべて実行時に除外されていて、実際にはどのアプリもブロックされない（DESIGN.md §9.6-7）。
+    // ロック中かどうかの判定は変えず、表示だけで説明する。除外の一覧が未取得の間は lockedCount が登録済みの数なので false
+    val allExempt = !noApps && lockedCount == 0
     // 一時解除中もロック中（タスクの追加・削除はできない）。ブロックだけが止まっている（DESIGN.md §9.6-2）
     val temporaryMinutes = today.temporaryRemainingMinutes
     val container = when {
         !permissions.accessibilityEnabled || noApps -> MaterialTheme.colorScheme.surfaceVariant
         unlocked || temporaryMinutes != null -> MaterialTheme.colorScheme.secondaryContainer
+        allExempt -> MaterialTheme.colorScheme.surfaceVariant
         else -> MaterialTheme.colorScheme.errorContainer
     }
     Card(colors = CardDefaults.cardColors(containerColor = container), modifier = Modifier.fillMaxWidth()) {
@@ -132,9 +136,14 @@ private fun LockStatusCard(
                 !permissions.accessibilityEnabled ->
                     "ブロック機能がオフです" to "アプリをロックするには、ユーザー補助の設定でタスクロックをオンにしてください。"
                 noApps -> "ロックするアプリが未設定です" to "SNSやゲームなど、タスクが終わるまで開けないようにするアプリを選びましょう。"
+                unlocked && allExempt -> "🔓 今日は解除済み" to
+                    "お疲れさまでした。登録しているアプリはすべて除外中のため、今はどのアプリもブロックされていません。"
                 unlocked -> "🔓 今日は解除済み" to "お疲れさまでした。${lockedCount}個のアプリを今日いっぱい使えます。"
                 temporaryMinutes != null ->
                     "⏳ 一時解除中・残り${temporaryMinutes}分" to "期限が来ると、使用中でもロックに戻ります。"
+                allExempt -> "🔒 ロック中" to
+                    "登録しているアプリはすべて除外中（既定のホーム・電話・SMSアプリなど）のため、今はどのアプリもブロックされていません。" +
+                    "タスクの追加・削除は、今日のタスクを終えるまでできません。"
                 else -> "🔒 ロック中" to "タスクを1つ終えると、${lockedCount}個のアプリが開けるようになります。"
             }
             Text(title, style = MaterialTheme.typography.titleMedium)
