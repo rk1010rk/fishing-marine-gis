@@ -51,7 +51,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
-    /** onResume で呼ぶ。設定画面から戻った時の権限状態と日付の切り替わりを反映する */
+    /**
+     * ロックしてはいけないパッケージ（既定のホーム・電話・SMS・設定・自アプリ）。ホームの「N個のアプリ」を、実際にブロックされる
+     * 数で表示するために使う（DESIGN.md §9.6-7）。既定のアプリは設定画面で変わるため、[refresh] のたびに取り直す。未取得の間は null
+     */
+    private val _exemptPackages = MutableStateFlow<Set<String>?>(null)
+    val exemptPackages: StateFlow<Set<String>?> = _exemptPackages.asStateFlow()
+
+    /** onResume で呼ぶ。設定画面から戻った時の権限状態・既定のアプリと日付の切り替わりを反映する */
     fun refresh() {
         repository.refreshDay()
         _permissions.value = PermissionState(
@@ -59,6 +66,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             usageAccessGranted = container.usageStats.hasPermission(),
             notificationsEnabled = NotificationManagerCompat.from(getApplication()).areNotificationsEnabled(),
         )
+        _exemptPackages.value = container.installedApps.exemptPackages()
         // 設定画面や権限のダイアログから戻ったときに、緊急解除の通知を判定し直してもらう
         EmergencyNotification.requestRefresh(getApplication())
     }

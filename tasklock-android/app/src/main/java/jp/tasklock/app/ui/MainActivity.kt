@@ -71,6 +71,7 @@ class MainActivity : ComponentActivity() {
         var screen by remember { mutableStateOf<Screen>(Screen.Home) }
         val today by vm.today.collectAsStateWithLifecycle()
         val permissions by vm.permissions.collectAsStateWithLifecycle()
+        val exemptPackages by vm.exemptPackages.collectAsStateWithLifecycle()
         val message by vm.message.collectAsStateWithLifecycle()
         val lockDraft by vm.lockDraft.collectAsStateWithLifecycle()
         val snackbar = remember { SnackbarHostState() }
@@ -129,6 +130,7 @@ class MainActivity : ComponentActivity() {
                 Screen.Home -> HomeScreen(
                     today = today,
                     permissions = permissions,
+                    exemptPackages = exemptPackages,
                     onAddTask = { screen = Screen.TaskSetup() },
                     onCompleteTask = { screen = Screen.Complete(it) },
                     onDeleteTask = vm::deactivateTask,
