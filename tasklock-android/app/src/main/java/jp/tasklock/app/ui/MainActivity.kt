@@ -1,10 +1,17 @@
 package jp.tasklock.app.ui
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -18,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import jp.tasklock.app.TaskLockApp
 import jp.tasklock.app.platform.AccessibilityStatus
@@ -76,6 +84,27 @@ class MainActivity : ComponentActivity() {
             restoreCount = if (emergencyStopId == null) 0 else vm.restoreCandidates().size
         }
 
+        // 緊急解除の通知の権限（Android 13 以降）。ホームの「通知をオンにする」を押したときだけ求める（DESIGN.md §9.6-2）
+        val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            // ダイアログが出なかった（以前に拒否された）場合は、アプリの通知の設定画面を開く
+            if (!granted && !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+                startActivity(notificationSettingsIntent())
+            }
+            vm.refresh()
+        }
+
+        fun enableNotifications() {
+            val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+            if (needsPermission) {
+                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                // 権限はあるが通知がオフ（Android 12 以前を含む）。設定画面でオンにしてもらう
+                startActivity(notificationSettingsIntent())
+            }
+        }
+
         LaunchedEffect(message) {
             message?.let {
                 snackbar.showSnackbar(it)
@@ -105,6 +134,7 @@ class MainActivity : ComponentActivity() {
                     onDeleteTask = vm::deactivateTask,
                     onLockedApps = { openLockedApps() },
                     onEnableBlocking = { screen = Screen.AccessibilityDisclosure },
+                    onEnableNotifications = { enableNotifications() },
                     restoreCount = restoreCount,
                     // 確認画面へ直接進む（DESIGN.md §9.6-2「再開」）。戻るとロック対象の画面で下書きを直せる
                     onRestoreLock = { vm.beginRestoreSelection(onReady = { screen = Screen.LockConfirm }) },
@@ -180,4 +210,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun appContainer() = (application as TaskLockApp).container
+
+    private fun notificationSettingsIntent(): Intent =
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
 }

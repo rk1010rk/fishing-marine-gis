@@ -1,6 +1,7 @@
 package jp.tasklock.app.ui
 
 import android.app.Application
+import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import jp.tasklock.app.TaskLockApp
@@ -9,6 +10,7 @@ import jp.tasklock.app.data.CompletionResult
 import jp.tasklock.app.data.TodayState
 import jp.tasklock.app.platform.AccessibilityStatus
 import jp.tasklock.app.platform.AppInfo
+import jp.tasklock.app.service.EmergencyNotification
 import jp.tasklock.core.model.EmergencyStopApp
 import jp.tasklock.core.model.Task
 import jp.tasklock.core.policy.ChangeResult
@@ -29,7 +31,12 @@ import kotlinx.coroutines.withContext
 /** ロック対象の下書き。[selected] は確定後にロック対象となる集合、[labels] は表示名 */
 data class LockDraft(val selected: Set<String>, val labels: Map<String, String>)
 
-data class PermissionState(val accessibilityEnabled: Boolean = false, val usageAccessGranted: Boolean = false)
+data class PermissionState(
+    val accessibilityEnabled: Boolean = false,
+    val usageAccessGranted: Boolean = false,
+    /** 通知を出せるか（Android 13 以降は POST_NOTIFICATIONS の許可、それより前は通知がオフになっていないか） */
+    val notificationsEnabled: Boolean = false,
+)
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val container = (app as TaskLockApp).container
@@ -50,7 +57,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _permissions.value = PermissionState(
             accessibilityEnabled = AccessibilityStatus.isEnabled(getApplication()),
             usageAccessGranted = container.usageStats.hasPermission(),
+            notificationsEnabled = NotificationManagerCompat.from(getApplication()).areNotificationsEnabled(),
         )
+        // 設定画面や権限のダイアログから戻ったときに、緊急解除の通知を判定し直してもらう
+        EmergencyNotification.requestRefresh(getApplication())
     }
 
     fun consumeMessage() {
