@@ -35,6 +35,8 @@ import java.time.format.DateTimeFormatter
 fun HomeScreen(
     today: TodayState?,
     permissions: PermissionState,
+    /** 実行時に除外されるパッケージ（[jp.tasklock.app.ui.MainViewModel.exemptPackages]）。未取得なら null */
+    exemptPackages: Set<String>?,
     onAddTask: () -> Unit,
     onCompleteTask: (Long) -> Unit,
     onDeleteTask: (Long) -> Unit,
@@ -66,7 +68,9 @@ fun HomeScreen(
             }
         }
         item {
-            LockStatusCard(today, permissions, onLockedApps, onEnableBlocking, onEnableNotifications, restoreCount, onRestoreLock)
+            LockStatusCard(
+                today, permissions, exemptPackages, onLockedApps, onEnableBlocking, onEnableNotifications, restoreCount, onRestoreLock,
+            )
         }
 
         if (today.tasks.isEmpty()) {
@@ -102,6 +106,7 @@ fun HomeScreen(
 private fun LockStatusCard(
     today: TodayState,
     permissions: PermissionState,
+    exemptPackages: Set<String>?,
     onLockedApps: () -> Unit,
     onEnableBlocking: () -> Unit,
     onEnableNotifications: () -> Unit,
@@ -110,6 +115,10 @@ private fun LockStatusCard(
 ) {
     val unlocked = today.grant != null
     val noApps = today.lockedApps.isEmpty()
+    // 「N個のアプリ」は実際にブロックされる数（登録済みでも実行時に除外されるものは数えない。DESIGN.md §9.6-7）。
+    // 除外の一覧が未取得の間（初回の onResume より前）は、登録済みの数をそのまま使う
+    val lockedCount = exemptPackages?.let { exempt -> today.lockedApps.count { it.packageName !in exempt } }
+        ?: today.lockedApps.size
     // 一時解除中もロック中（タスクの追加・削除はできない）。ブロックだけが止まっている（DESIGN.md §9.6-2）
     val temporaryMinutes = today.temporaryRemainingMinutes
     val container = when {
@@ -123,10 +132,10 @@ private fun LockStatusCard(
                 !permissions.accessibilityEnabled ->
                     "ブロック機能がオフです" to "アプリをロックするには、ユーザー補助の設定でタスクロックをオンにしてください。"
                 noApps -> "ロックするアプリが未設定です" to "SNSやゲームなど、タスクが終わるまで開けないようにするアプリを選びましょう。"
-                unlocked -> "🔓 今日は解除済み" to "お疲れさまでした。${today.lockedApps.size}個のアプリを今日いっぱい使えます。"
+                unlocked -> "🔓 今日は解除済み" to "お疲れさまでした。${lockedCount}個のアプリを今日いっぱい使えます。"
                 temporaryMinutes != null ->
                     "⏳ 一時解除中・残り${temporaryMinutes}分" to "期限が来ると、使用中でもロックに戻ります。"
-                else -> "🔒 ロック中" to "タスクを1つ終えると、${today.lockedApps.size}個のアプリが開けるようになります。"
+                else -> "🔒 ロック中" to "タスクを1つ終えると、${lockedCount}個のアプリが開けるようになります。"
             }
             Text(title, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(4.dp))
