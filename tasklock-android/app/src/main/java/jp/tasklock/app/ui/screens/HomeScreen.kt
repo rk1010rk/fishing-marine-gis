@@ -57,6 +57,13 @@ fun HomeScreen(
                 today.day.format(DateTimeFormatter.ofPattern("M月d日")) + "のタスク",
                 style = MaterialTheme.typography.headlineSmall,
             )
+            // 今月の回数（DESIGN.md §9.6-2「共通の表示」）。評価や連続の記録は出さず、0 もそのまま事実として出す
+            today.monthly?.let {
+                Text(
+                    "今月：タスク達成${it.taskDays}日 / 一時解除${it.temporaryUnlocks}回 / 緊急解除${it.emergencyStops}回",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
         item {
             LockStatusCard(today, permissions, onLockedApps, onEnableBlocking, onEnableNotifications, restoreCount, onRestoreLock)
