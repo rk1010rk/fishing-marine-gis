@@ -16,17 +16,20 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import jp.tasklock.app.ui.LockDraft
 import jp.tasklock.app.ui.MainViewModel
+import jp.tasklock.core.policy.EmergencyStopPolicy
 import jp.tasklock.core.policy.LockNotice
 import jp.tasklock.core.policy.LockSelection
 
@@ -34,12 +37,15 @@ import jp.tasklock.core.policy.LockSelection
  * ロック対象の追加を反映する直前の確認画面（DESIGN.md §9.6-6）。
  * 最下部の「確定」で初めて DB とロック状態に反映する。戻るとロック対象の画面に戻り、下書きは残る。
  * 表示は ①ロック対象の変更 ②重要なアプリに関する警告 ③ロックに関する注意 の3欄（該当するものだけ）。
+ * 緊急解除中（[resuming]）は、確定でロックが再開することと理由の入力欄（任意）を出し、確定のボタンを
+ * 「ロックを再開する」と表示する。再開するかどうかは Repository が DB の状態で判定する（DESIGN.md §9.6-2）。
  */
 @Composable
 fun LockConfirmScreen(
     vm: MainViewModel,
     draft: LockDraft?,
     savedLabels: Map<String, String>,
+    resuming: Boolean,
     onBack: () -> Unit,
     onApplied: () -> Unit,
     modifier: Modifier = Modifier,
@@ -58,6 +64,7 @@ fun LockConfirmScreen(
         importantApps = labelsOf(vm.importantApps(diff))
     }
     var applying by remember { mutableStateOf(false) }
+    var reason by rememberSaveable { mutableStateOf("") }
 
     Column(modifier = modifier.fillMaxSize()) {
         Column(
@@ -87,6 +94,22 @@ fun LockConfirmScreen(
                 }
                 LockNotice.NONE, null -> Unit
             }
+
+            if (resuming && diff.added.isNotEmpty()) {
+                Section(title = "ロックの再開") {
+                    Text("確定すると、ロックが再開します。")
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = reason,
+                        // 上限はコードポイントで数える（保存時も Repository で正規化する）
+                        onValueChange = { reason = it.limitCodePoints(EmergencyStopPolicy.REASON_MAX_LENGTH) },
+                        label = { Text("緊急解除した理由（任意）") },
+                        supportingText = { Text("${EmergencyStopPolicy.REASON_MAX_LENGTH}文字まで。入力しなくても再開できます") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
         }
         HorizontalDivider()
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -94,15 +117,23 @@ fun LockConfirmScreen(
                 onClick = {
                     applying = true
                     // 拒否されたときは理由がメッセージで表示され、下書きは残る
-                    vm.applyConfirmedLockSelection(onApplied = onApplied, onRejected = { applying = false })
+                    vm.applyConfirmedLockSelection(
+                        onApplied = onApplied,
+                        onRejected = { applying = false },
+                        reason = if (resuming) reason else null,
+                    )
                 },
                 enabled = draft != null && !applying && notice != null && importantApps != null, // 判定が終わるまで確定できない
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("確定") }
+            ) { Text(if (resuming) "ロックを再開する" else "確定") }
             OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("戻って修正する") }
         }
     }
 }
+
+/** 先頭から [max] コードポイントまでにする（サロゲートペアを途中で切らない） */
+private fun String.limitCodePoints(max: Int): String =
+    if (codePointCount(0, length) <= max) this else substring(0, offsetByCodePoints(0, max))
 
 @Composable
 private fun Section(title: String, warning: Boolean = false, content: @Composable () -> Unit) {

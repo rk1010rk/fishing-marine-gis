@@ -69,11 +69,19 @@ interface LockedAppDao {
     @Query("SELECT packageName FROM locked_apps")
     suspend fun getPackages(): List<String>
 
+    /** 緊急解除の開始で、その時点のロック対象（表示名を含む）を emergency_stop_apps に写すために使う */
+    @Query("SELECT * FROM locked_apps ORDER BY label")
+    suspend fun getAll(): List<LockedAppEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(app: LockedAppEntity)
 
     @Query("DELETE FROM locked_apps WHERE packageName = :packageName")
     suspend fun delete(packageName: String)
+
+    /** 緊急解除の開始だけで使う（ChangePolicy を通さない意図した例外。DESIGN.md §9.6-2「v3 の DB 設計」） */
+    @Query("DELETE FROM locked_apps")
+    suspend fun deleteAll()
 }
 
 @Dao

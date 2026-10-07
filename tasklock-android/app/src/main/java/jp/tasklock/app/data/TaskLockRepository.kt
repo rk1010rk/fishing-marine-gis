@@ -1,7 +1,9 @@
 package jp.tasklock.app.data
 
+import android.util.Log
 import androidx.room.withTransaction
 import jp.tasklock.app.data.db.AppDatabase
+import jp.tasklock.app.data.db.EmergencyStopAppEntity
 import jp.tasklock.app.data.db.LockedAppEntity
 import jp.tasklock.app.data.db.UnlockGrantEntity
 import jp.tasklock.app.platform.UsageStatsReader
@@ -9,6 +11,8 @@ import jp.tasklock.core.lock.BlockSnapshot
 import jp.tasklock.core.lock.LockEvaluator
 import jp.tasklock.core.lock.UnlockDecision
 import jp.tasklock.core.model.Completion
+import jp.tasklock.core.model.EmergencyStop
+import jp.tasklock.core.model.EmergencyStopApp
 import jp.tasklock.core.model.Task
 import jp.tasklock.core.model.TaskCategory
 import jp.tasklock.core.model.TemporaryUnlock
@@ -20,6 +24,8 @@ import jp.tasklock.core.model.VerificationStatus
 import jp.tasklock.core.model.bestStatus
 import jp.tasklock.core.policy.ChangePolicy
 import jp.tasklock.core.policy.ChangeResult
+import jp.tasklock.core.policy.EmergencyStopDecision
+import jp.tasklock.core.policy.EmergencyStopPolicy
 import jp.tasklock.core.policy.LockNotice
 import jp.tasklock.core.policy.LockSelection
 import jp.tasklock.core.policy.LockSelectionDiff
@@ -63,6 +69,11 @@ data class TodayState(
     val temporary: TemporaryUnlock? = null,
     /** この状態を作った時刻（一時解除の残り時間の計算に使う） */
     val asOf: Instant = Instant.EPOCH,
+    /**
+     * 有効な緊急解除（無ければ null）。表示用で、開始・再開の判定は Repository がトランザクション内で行う。
+     * 緊急解除中はロック対象が空なので、[locked] は false になる（DESIGN.md §9.6-2「v3 の DB 設計」）
+     */
+    val emergencyStop: EmergencyStop? = null,
 ) {
     /** 画面表示用。変更可否の最終判定は Repository が DB から行う。一時解除中も「ロック中」 */
     val locked: Boolean get() = lockedApps.isNotEmpty() && grant == null
@@ -158,6 +169,7 @@ class TaskLockRepository(
             }
             TodayState(day, progress, apps, grant?.toModel()?.takeIf { it.isActiveAt(clock.instant()) })
         }.combine(temporaryTicks) { state, tick -> state.copy(temporary = tick.active, asOf = tick.at) }
+            .combine(db.emergencyStopDao().observeActive()) { state, stop -> state.copy(emergencyStop = stop?.toModel()) }
     }
 
     private data class TemporaryTick(val active: TemporaryUnlock?, val at: Instant)
@@ -227,8 +239,17 @@ class TaskLockRepository(
      * 確定された変更をまとめて反映する。[added] は追加するパッケージとその表示名、[removed] は外すパッケージ。
      * トランザクション内で DB の現在状態を読み直し、反映前の状態で全件を判定する。
      * 1件でも拒否されたら何も書き込まずに最初の拒否を返す（全件反映か、何もしないかのどちらか）。
+     *
+     * 緊急解除からの再開（DESIGN.md §9.6-2「v3 の DB 設計」）も同じトランザクションで行う。再開するかどうかは
+     * DB の状態だけで決まり（有効な緊急解除があり、反映後のロック対象が空でない）、[reason] では決まらない。
+     * 緊急解除中でなければ、emergency_stops には何も書き込まず、[reason] は使わない（従来の動作のまま）。
+     * @param reason 再開の理由（任意）。確認画面の入力をそのまま渡し、ここで正規化する
      */
-    suspend fun applyLockSelection(added: Map<String, String>, removed: Set<String>): ChangeResult {
+    suspend fun applyLockSelection(
+        added: Map<String, String>,
+        removed: Set<String>,
+        reason: String? = null,
+    ): ChangeResult {
         val exempt = exemptPackages()
         return db.withTransaction {
             val current = db.lockedAppDao().getPackages().toSet()
@@ -240,8 +261,31 @@ class TaskLockRepository(
                 diff.added.forEach { pkg ->
                     db.lockedAppDao().insert(LockedAppEntity(pkg, added.getValue(pkg), clock.millis()))
                 }
+                resumeEmergencyStops(reason)
             }
             result
+        }
+    }
+
+    /**
+     * [applyLockSelection] の反映の後に、同じトランザクション内で呼ぶ。反映後のロック対象が空でなければ、
+     * 有効な緊急解除をすべて再開済みにする。緊急解除中でない、または反映後のロック対象が空なら何もしない
+     */
+    private suspend fun resumeEmergencyStops(reason: String?) {
+        val targets = EmergencyStopPolicy.resumeTargets(
+            stops = activeEmergencyStops(),
+            lockedAfterApply = db.lockedAppDao().getPackages().toSet(),
+        )
+        if (targets.isEmpty()) return
+        val now = clock.millis()
+        val normalized = EmergencyStopPolicy.normalizeReason(reason)
+        targets.forEach { id ->
+            val updated = db.emergencyStopDao().markResumed(id, now, normalized)
+            if (updated != 1) {
+                // 防御的な処理: 同じトランザクション内で有効と読んだ行なので、通常は発生しない。
+                // 例外にするとロック対象の反映ごと失敗するため、記録だけ残して続ける
+                Log.w(TAG, "markResumed updated $updated rows for emergency stop $id")
+            }
         }
     }
 
@@ -262,6 +306,60 @@ class TaskLockRepository(
         ).isLockedAt(clock.instant())
 
     private suspend fun activeTasks(): List<Task> = db.taskDao().getActive().map { it.toModel() }
+
+    private suspend fun activeEmergencyStops(): List<EmergencyStop> =
+        db.emergencyStopDao().getActive().map { it.toModel() }
+
+    // ---- 緊急解除（DESIGN.md §9.6-2「一時解除と緊急解除」「v3 の DB 設計」） ----
+    // 開始の可否は EmergencyStopPolicy（:core）が判定し、ここではトランザクション内で DB を読み直して渡す。
+    // 再開は applyLockSelection の確定の中で行う（緊急解除中にロック対象を空でなくできる経路はそれだけ）。
+
+    /**
+     * 緊急解除を開始する。1つのトランザクションで ①判定 ②emergency_stops に追加 ③その時点の locked_apps を
+     * emergency_stop_apps に写す ④locked_apps をすべて削除 を行う。④は ChangePolicy を通さない意図した例外。
+     * 許可されたときだけ記録し、採番した id を付けて返す
+     */
+    suspend fun startEmergencyStop(): EmergencyStopDecision = db.withTransaction {
+        val now = clock.instant()
+        when (val decision = EmergencyStopPolicy.decideStart(now, boundary, isLockedNow(), activeEmergencyStops())) {
+            is EmergencyStopDecision.Allowed -> {
+                val id = db.emergencyStopDao().insert(decision.stop.toEntity())
+                db.emergencyStopDao().insertApps(
+                    db.lockedAppDao().getAll().map { EmergencyStopAppEntity(id, it.packageName, it.label) },
+                )
+                db.lockedAppDao().deleteAll()
+                EmergencyStopDecision.Allowed(decision.stop.copy(id = id))
+            }
+            is EmergencyStopDecision.Rejected -> decision
+        }
+    }
+
+    /**
+     * 緊急解除でロック対象が空になったことが [blockSnapshot] に反映されるのを待つ（一時解除と同じ理由）。
+     * @return 反映されたら true。false でも記録自体は保存済み（開始の失敗ではない）
+     */
+    suspend fun awaitEmergencyStopInSnapshot(): Boolean =
+        withTimeoutOrNull(EMERGENCY_SNAPSHOT_TIMEOUT_MILLIS) {
+            blockSnapshot.first { it != null && it.lockedPackages.isEmpty() }
+        } != null
+
+    /**
+     * 「前のロック対象で再開」の下書きの初期値。有効なすべての緊急解除の時点のロック対象から、
+     * アンインストール済み（[installed] に無い）・除外アプリ・学習アプリを除く。緊急解除中でなければ空
+     */
+    suspend fun restoreCandidates(installed: Set<String>): List<EmergencyStopApp> {
+        val exempt = exemptPackages()
+        return db.withTransaction {
+            val stops = activeEmergencyStops()
+            EmergencyStopPolicy.restoreCandidates(
+                stops = stops,
+                apps = stops.flatMap { stop -> db.emergencyStopDao().appsFor(stop.id).map { it.toModel() } },
+                installed = installed,
+                exempt = exempt,
+                studyPackages = ChangePolicy.studyPackages(activeTasks()),
+            )
+        }
+    }
 
     // ---- 一時解除（DESIGN.md §9.6-2） ----
     // 開始の可否は TemporaryUnlockPolicy（:core）が判定し、ここではトランザクション内で DB を読み直して渡す。
@@ -413,5 +511,10 @@ class TaskLockRepository(
 
         /** 開始した一時解除がスナップショットに反映されるのを待つ上限 */
         const val TEMPORARY_SNAPSHOT_TIMEOUT_MILLIS = 3_000L
+
+        /** 緊急解除で空にしたロック対象がスナップショットに反映されるのを待つ上限 */
+        const val EMERGENCY_SNAPSHOT_TIMEOUT_MILLIS = 3_000L
+
+        const val TAG = "TaskLockRepository"
     }
 }
