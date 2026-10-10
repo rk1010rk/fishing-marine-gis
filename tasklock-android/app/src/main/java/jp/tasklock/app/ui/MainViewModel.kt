@@ -19,7 +19,9 @@ import jp.tasklock.core.policy.LockNotice
 import jp.tasklock.core.policy.LockSelection
 import jp.tasklock.core.policy.LockSelectionDiff
 import jp.tasklock.core.template.TaskTemplate
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -58,8 +60,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _exemptPackages = MutableStateFlow<Set<String>?>(null)
     val exemptPackages: StateFlow<Set<String>?> = _exemptPackages.asStateFlow()
 
+    /**
+     * 候補一覧（[launchableApps]、既定の SMS アプリを含む）のパッケージ名。ホームで、一覧に見つからない登録行の数を
+     * 補足として出すために使う（DESIGN.md §9.6-7）。[refresh] のたびに未取得（null）に戻してから取り直し、
+     * 取得に失敗した場合も null のままにする（古い一覧を根拠に補足を出さないため）
+     */
+    private val _listedPackages = MutableStateFlow<Set<String>?>(null)
+    val listedPackages: StateFlow<Set<String>?> = _listedPackages.asStateFlow()
+    private var listedJob: Job? = null
+
     /** onResume で呼ぶ。設定画面から戻った時の権限状態・既定のアプリと日付の切り替わりを反映する */
     fun refresh() {
+        // 前回の候補一覧の取得を取り消し、未取得に戻す。以下のどこかで例外が出ても、古い候補一覧が残らないよう最初に行う
+        listedJob?.cancel()
+        _listedPackages.value = null
         repository.refreshDay()
         _permissions.value = PermissionState(
             accessibilityEnabled = AccessibilityStatus.isEnabled(getApplication()),
@@ -67,6 +81,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             notificationsEnabled = NotificationManagerCompat.from(getApplication()).areNotificationsEnabled(),
         )
         _exemptPackages.value = container.installedApps.exemptPackages()
+        // 除外一覧を取得できた後で、候補一覧を取り直す（取得に失敗したら null のまま）
+        listedJob = viewModelScope.launch {
+            _listedPackages.value = try {
+                launchableApps(includeDefaultSms = true).map { it.packageName }.toSet()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+        }
         // 設定画面や権限のダイアログから戻ったときに、緊急解除の通知を判定し直してもらう
         EmergencyNotification.requestRefresh(getApplication())
     }

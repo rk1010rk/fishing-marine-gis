@@ -72,6 +72,7 @@ class MainActivity : ComponentActivity() {
         val today by vm.today.collectAsStateWithLifecycle()
         val permissions by vm.permissions.collectAsStateWithLifecycle()
         val exemptPackages by vm.exemptPackages.collectAsStateWithLifecycle()
+        val listedPackages by vm.listedPackages.collectAsStateWithLifecycle()
         val message by vm.message.collectAsStateWithLifecycle()
         val lockDraft by vm.lockDraft.collectAsStateWithLifecycle()
         val snackbar = remember { SnackbarHostState() }
@@ -131,6 +132,7 @@ class MainActivity : ComponentActivity() {
                     today = today,
                     permissions = permissions,
                     exemptPackages = exemptPackages,
+                    listedPackages = listedPackages,
                     onAddTask = { screen = Screen.TaskSetup() },
                     onCompleteTask = { screen = Screen.Complete(it) },
                     onDeleteTask = vm::deactivateTask,
