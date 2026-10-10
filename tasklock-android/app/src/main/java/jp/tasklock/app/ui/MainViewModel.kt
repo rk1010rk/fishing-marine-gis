@@ -78,6 +78,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun launchableApps(includeDefaultSms: Boolean = false): List<AppInfo> =
         withContext(Dispatchers.IO) { container.installedApps.launchableApps(includeDefaultSms) }
 
+    /**
+     * その時点の除外の一覧（[jp.tasklock.app.platform.InstalledApps.exemptPackages]）。
+     * ロック対象の画面を開いたときに取得し、候補一覧に無い登録行の理由の判定に使う。
+     */
+    suspend fun currentExemptPackages(): Set<String> =
+        withContext(Dispatchers.IO) { container.installedApps.exemptPackages() }
+
     /** 保存できた場合のみ [onSaved] を呼ぶ。拒否された場合は理由をメッセージで表示する */
     fun addTask(template: TaskTemplate, title: String, target: Int, targetPackage: String?, onSaved: () -> Unit) {
         viewModelScope.launch {

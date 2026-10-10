@@ -38,12 +38,17 @@ import jp.tasklock.core.policy.LockSelection
  * 外すだけならその場で反映し、追加を含むなら確認画面へ進む（この時点では何も書き込まない）。
  * ロック中は保存済みの対象を外せない。学習アプリに設定中のアプリは選べない（最終判定は Repository 側）。
  * 既定の SMS アプリは候補に出さないが、登録済みの場合は DB の行を残したまま「除外中」と表示する（ブロックはされない）
+ * 登録済みでも候補の一覧に無い行（既定の SMS アプリ以外の除外中のアプリ、アンインストール済み、ランチャーに表示されない
+ * アプリ）は、一覧の後ろに理由を付けて表示し、ほかの登録済みの行と同じく、ロック中でなければ外せる（DESIGN.md §9.6-7）。
+ * アンインストール済みとランチャーに表示されないアプリは、パッケージの可視性（<queries>）の制約で区別できないため、同じ表示にする
  */
 @Composable
 fun LockedAppsScreen(
     vm: MainViewModel,
     draft: LockDraft?,
     lockedPackages: Set<String>,
+    /** 登録済みの行の表示名（locked_apps の label）。候補の一覧に無い行の表示に使う */
+    lockedLabels: Map<String, String>,
     studyPackages: Set<String>,
     locked: Boolean,
     /** 緊急解除中。確定のボタンを「ロックを再開する」と表示する（DESIGN.md §9.6-2「v3 の DB 設計」） */
@@ -55,7 +60,12 @@ fun LockedAppsScreen(
     modifier: Modifier = Modifier,
 ) {
     var apps by remember { mutableStateOf<List<AppInfo>?>(null) }
-    LaunchedEffect(Unit) { apps = vm.launchableApps(includeDefaultSms = true) }
+    var exempt by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(Unit) {
+        // 除外一覧を取得してから候補一覧を取得する
+        exempt = vm.currentExemptPackages()
+        apps = vm.launchableApps(includeDefaultSms = true)
+    }
     // ホーム以外の経路で開かれた場合も、保存済みの状態から下書きを始める
     LaunchedEffect(draft == null) { if (draft == null) vm.beginLockSelection() }
 
@@ -118,7 +128,12 @@ fun LockedAppsScreen(
                 item { Text("読み込み中…") }
             } else {
                 val visible = list.filter { !it.isDefaultSms || it.packageName in lockedPackages }
-                items(visible, key = { it.packageName }) { app ->
+                val listed = list.map { it.packageName }.toSet()
+                // 登録済みだが候補の一覧に無い行。下書きには保存済みの全行が入っているので、ここに出しても確定の差分は変わらない
+                val notListed = lockedPackages.filter { it !in listed }
+                    .map { AppInfo(it, lockedLabels[it] ?: it) }
+                    .sortedWith(compareBy({ it.label }, { it.packageName }))
+                items(visible + notListed, key = { it.packageName }) { app ->
                     val saved = app.packageName in lockedPackages
                     val checked = app.packageName in selected
                     val isStudyApp = app.packageName in studyPackages
@@ -142,6 +157,17 @@ fun LockedAppsScreen(
                             }
                             if (isStudyApp) Text("学習アプリに設定中", style = MaterialTheme.typography.bodySmall)
                             if (app.isDefaultSms) Text("除外中（既定のSMSアプリ）", style = MaterialTheme.typography.bodySmall)
+                            if (app.packageName !in listed) {
+                                // 除外中なら canLockApp が追加を拒否し、候補にも出ないため、外すと除外中は再登録できない
+                                val (reason, detail) = if (app.packageName in exempt) {
+                                    "除外中（既定のホーム・電話アプリなど）" to "ブロックされません。外すと、除外中は再登録できません。"
+                                } else {
+                                    // ブロックされるかは区別できないため書かない（アンインストール済みなら開けず、隠れたアプリなら開けばブロックされる）
+                                    "一覧に見つかりません" to "アンインストール済み、またはランチャーに表示されないアプリです。"
+                                }
+                                Text(reason, style = MaterialTheme.typography.bodySmall)
+                                Text(detail, style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     }
                 }

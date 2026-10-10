@@ -174,6 +174,7 @@ class MainActivity : ComponentActivity() {
                     vm = vm,
                     draft = lockDraft,
                     lockedPackages = today?.lockedApps?.map { it.packageName }?.toSet().orEmpty(),
+                    lockedLabels = today?.lockedApps?.associate { it.packageName to it.label }.orEmpty(),
                     studyPackages = today?.studyPackages.orEmpty(),
                     locked = today?.locked == true,
                     emergencyStopped = today?.emergencyStop != null,
