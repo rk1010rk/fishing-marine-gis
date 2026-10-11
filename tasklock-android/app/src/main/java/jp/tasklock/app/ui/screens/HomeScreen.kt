@@ -37,6 +37,8 @@ fun HomeScreen(
     permissions: PermissionState,
     /** 実行時に除外されるパッケージ（[jp.tasklock.app.ui.MainViewModel.exemptPackages]）。未取得なら null */
     exemptPackages: Set<String>?,
+    /** 候補一覧のパッケージ名（[jp.tasklock.app.ui.MainViewModel.listedPackages]）。未取得・取得失敗なら null */
+    listedPackages: Set<String>?,
     onAddTask: () -> Unit,
     onCompleteTask: (Long) -> Unit,
     onDeleteTask: (Long) -> Unit,
@@ -69,7 +71,8 @@ fun HomeScreen(
         }
         item {
             LockStatusCard(
-                today, permissions, exemptPackages, onLockedApps, onEnableBlocking, onEnableNotifications, restoreCount, onRestoreLock,
+                today, permissions, exemptPackages, listedPackages, onLockedApps, onEnableBlocking, onEnableNotifications,
+                restoreCount, onRestoreLock,
             )
         }
 
@@ -107,6 +110,7 @@ private fun LockStatusCard(
     today: TodayState,
     permissions: PermissionState,
     exemptPackages: Set<String>?,
+    listedPackages: Set<String>?,
     onLockedApps: () -> Unit,
     onEnableBlocking: () -> Unit,
     onEnableNotifications: () -> Unit,
@@ -122,6 +126,15 @@ private fun LockStatusCard(
     // 登録はあるが、すべて実行時に除外されていて、実際にはどのアプリもブロックされない（DESIGN.md §9.6-7）。
     // ロック中かどうかの判定は変えず、表示だけで説明する。除外の一覧が未取得の間は lockedCount が登録済みの数なので false
     val allExempt = !noApps && lockedCount == 0
+    // N のうち、候補一覧に無い登録行の数（ロック対象の画面で「一覧に見つかりません」と表示される行と同じ条件）。
+    // アンインストール済みかランチャーに表示されないアプリかは区別できないため、N は減らさず補足だけを出す（DESIGN.md §9.6-7）。
+    // 除外一覧と候補一覧のどちらかが未取得（取得中・取得失敗を含む）の間は 0 とし、補足を出さない
+    val notFoundCount = if (exemptPackages != null && listedPackages != null) {
+        today.lockedApps.count { it.packageName !in exemptPackages && it.packageName !in listedPackages }
+    } else {
+        0
+    }
+    val notFoundNote = if (notFoundCount > 0) "（うち${notFoundCount}個は一覧に見つかりません。「ロック対象を見る」で確認できます）" else ""
     // 一時解除中もロック中（タスクの追加・削除はできない）。ブロックだけが止まっている（DESIGN.md §9.6-2）
     val temporaryMinutes = today.temporaryRemainingMinutes
     val container = when {
@@ -138,13 +151,13 @@ private fun LockStatusCard(
                 noApps -> "ロックするアプリが未設定です" to "SNSやゲームなど、タスクが終わるまで開けないようにするアプリを選びましょう。"
                 unlocked && allExempt -> "🔓 今日は解除済み" to
                     "お疲れさまでした。登録しているアプリはすべて除外中のため、今はどのアプリもブロックされていません。"
-                unlocked -> "🔓 今日は解除済み" to "お疲れさまでした。${lockedCount}個のアプリを今日いっぱい使えます。"
+                unlocked -> "🔓 今日は解除済み" to "お疲れさまでした。${lockedCount}個のアプリを今日いっぱい使えます${notFoundNote}。"
                 temporaryMinutes != null ->
                     "⏳ 一時解除中・残り${temporaryMinutes}分" to "期限が来ると、使用中でもロックに戻ります。"
                 allExempt -> "🔒 ロック中" to
                     "登録しているアプリはすべて除外中（既定のホーム・電話・SMSアプリなど）のため、今はどのアプリもブロックされていません。" +
                     "タスクの追加・削除は、今日のタスクを終えるまでできません。"
-                else -> "🔒 ロック中" to "タスクを1つ終えると、${lockedCount}個のアプリが開けるようになります。"
+                else -> "🔒 ロック中" to "タスクを1つ終えると、${lockedCount}個のアプリが開けるようになります${notFoundNote}。"
             }
             Text(title, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(4.dp))
