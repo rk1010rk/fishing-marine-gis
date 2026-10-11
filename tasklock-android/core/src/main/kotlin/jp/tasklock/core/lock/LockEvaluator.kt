@@ -75,7 +75,7 @@ data class BlockSnapshot(
 ) {
     /**
      * @param exemptPackages 実行時点のホーム・電話・自アプリ等。ロック対象に登録済みでも決してブロックしない
-     *   （登録後に既定のホーム/電話アプリが変わった場合への備え）
+     *   （登録後にホームアプリになった場合や、既定の電話・SMS アプリが変わった場合への備え）
      */
     fun shouldBlock(packageName: String, now: Instant, exemptPackages: Set<String> = emptySet()): Boolean {
         if (packageName !in lockedPackages) return false

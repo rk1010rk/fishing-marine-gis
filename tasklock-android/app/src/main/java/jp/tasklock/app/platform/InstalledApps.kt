@@ -40,7 +40,8 @@ class InstalledApps(private val context: Context) {
 
     /**
      * ロックしてはいけないパッケージ。選択時だけでなく、ブロック判定時（実行時）にも使う。
-     * 既定のホーム/電話/SMS アプリはロック設定後に変わりうるため、呼ぶたびに問い合わせる（DB には保存しない）。
+     * ホームアプリ（既定かどうかによらず `CATEGORY_HOME` を受け取れるすべて）と既定の電話/SMS アプリは、
+     * ロック設定後に変わりうるため、呼ぶたびに問い合わせる（DB には保存しない）。
      */
     fun exemptPackages(): Set<String> {
         val homes = query(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME))
