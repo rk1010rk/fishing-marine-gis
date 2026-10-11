@@ -54,7 +54,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val message: StateFlow<String?> = _message.asStateFlow()
 
     /**
-     * ロックしてはいけないパッケージ（既定のホーム・電話・SMS・設定・自アプリ）。ホームの「N個のアプリ」を、実際にブロックされる
+     * ロックしてはいけないパッケージ（ホームアプリ・既定の電話・SMS アプリ・設定・自アプリ）。ホームの「N個のアプリ」を、実際にブロックされる
      * 数で表示するために使う（DESIGN.md §9.6-7）。既定のアプリは設定画面で変わるため、[refresh] のたびに取り直す。未取得の間は null
      */
     private val _exemptPackages = MutableStateFlow<Set<String>?>(null)
