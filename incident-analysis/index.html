@@ -101,6 +101,7 @@ legend{font-size:12.5px;color:var(--muted);font-weight:700;padding:0 4px}
 .canvas-card{padding:0;overflow:hidden}
 .canvas-bar{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
 .canvas{overflow:auto;max-height:78vh}
+.linkbar{padding:8px 14px;background:var(--accent-soft);border-bottom:1px solid var(--line);font-size:13px}
 .canvas svg{display:block}
 .legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);align-items:center}
 .lg{display:inline-flex;gap:6px;align-items:center}
@@ -627,7 +628,7 @@ function vtaSVG(){
   brk.forEach(([x,y]) => { g += `<g class="brk" transform="translate(${x},${y})"><circle r="9"/><path d="M-4,-4 L4,4 M4,-4 L-4,4"/></g>`; });
   N.forEach(n => {
     const p = pos[n.id]; if (!p) return;
-    const cls = ['node', n.kind==='event'?'event':'', n.variation?'var':'', ui.sel===n.id?'sel':''].join(' ');
+    const cls = ['node', n.kind==='event'?'event':'', n.variation?'var':'', (ui.link ? ui.linkFrom===n.id : ui.sel===n.id)?'sel':''].join(' ');
     const lines = wrapText(n.text || '（内容未入力）', 11, 3);
     g += `<g class="${cls}" data-act="sel-node" data-id="${n.id}" transform="translate(${p.x},${p.y})" tabindex="0" role="button" aria-label="${esc(KINDS[n.kind]+'：'+n.text)}">
       <rect class="n-box" width="${BW}" height="${BH}" rx="${n.variation?18:5}"/>
@@ -656,7 +657,7 @@ function nodeForm(){
     <label>内容（「誰が・何をした」を1つだけ）<textarea id="f-text" rows="3" placeholder="${esc(TEMPLATES[S.meta.type]?.ex || '例：○○が△△した')}">${esc(d.text)}</textarea></label>
     <label class="check"><input type="checkbox" id="f-var" ${d.variation?'checked':''}><span><b>いつもと違った</b>（変動要因）<br><span class="small muted">ふだんの手順や状態と違っていた</span></span></label>
     <label class="check"><input type="checkbox" id="f-elim" ${d.elim?'checked':''}><span><b>ここで止められた</b>（排除ノード）<br><span class="small muted">ここで流れを断てば事故にならなかった</span></span></label>
-    <fieldset><legend>直前のノード（矢印の出発点）</legend>
+    <fieldset><legend>この四角の原因になった四角（矢印の出発点）</legend>
       <div class="preds">${others.length ? others.map(o => `<label class="check"><input type="checkbox" class="f-pred" value="${o.id}" ${preds.includes(o.id)?'checked':''}><span><span class="mono muted">#${o.seq}</span> ${esc(laneName(o.lane))}：${esc(o.text.slice(0,22))}</span></label>`).join('') : '<span class="small muted">まだ他のノードがありません</span>'}</div>
     </fieldset>
     <label>メモ（根拠・証言の出典など）<textarea id="f-note" rows="2">${esc(d.note)}</textarea></label>
@@ -690,8 +691,9 @@ function renderVTA(){
           <span class="lg"><span class="sw x">✕</span>ここで止められた点（排除ノード）</span>
           <span class="lg"><span class="sw event"></span>事故事象</span>
         </div>
-        <span class="btnrow" style="align-items:center"><span class="small muted mono">${S.nodes.length} ノード ／ ${S.edges.length} 矢印</span><button class="btn sm" data-act="lane-add">＋ 関係者・要素の欄を追加</button></span>
+        <span class="btnrow" style="align-items:center"><span class="small muted mono">${S.nodes.length} ノード ／ ${S.edges.length} 矢印</span><button class="btn sm ${ui.link ? 'primary' : ''}" data-act="link-mode">${ui.link ? 'つなぐ操作を終える' : '→ 矢印でつなぐ'}</button><button class="btn sm" data-act="lane-add">＋ 関係者・要素の欄を追加</button></span>
       </div>
+      ${ui.link ? `<div class="linkbar" role="status">${ui.linkFrom ? `<b>つなぎ先</b>（結果の側）の四角をクリックしてください。選んだ四角をもう一度クリックすると取り消せます。` : `<b>原因の側</b>の四角をクリックし、次に<b>結果の側</b>の四角をクリックすると矢印が引かれます。同じ組み合わせをもう一度選ぶと矢印を消します。`}</div>` : ''}
       <div class="canvas">${vtaSVG()}</div>
     </section>
     <aside class="card">${nodeForm()}</aside>
@@ -1007,7 +1009,15 @@ document.addEventListener('click', e => {
   const id = a.dataset.id;
   switch (a.dataset.act){
     case 'tab': setTab(id); break;
-    case 'sel-node': ui.sel = id; render(); break;
+    case 'sel-node':
+      if (ui.link){
+        if (!ui.linkFrom || ui.linkFrom === id){ ui.linkFrom = ui.linkFrom === id ? null : id; render(); break; }
+        const i = S.edges.findIndex(x => x.from === ui.linkFrom && x.to === id);
+        if (i >= 0){ S.edges.splice(i, 1); toast('矢印を消しました'); } else { S.edges.push({from:ui.linkFrom, to:id}); toast('矢印でつなぎました'); }
+        ui.linkFrom = null; save(); render(); break;
+      }
+      ui.sel = id; render(); break;
+    case 'link-mode': ui.link = !ui.link; ui.linkFrom = null; render(); break;
     case 'new-node': ui.sel = null; render(); $('#f-text')?.focus(); break;
     case 'save-node': {
       const text = $('#f-text').value.trim();
