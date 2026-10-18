@@ -1,0 +1,956 @@
+<title>VTA・なぜなぜ分析ボード</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Zen+Kaku+Gothic+New:wght@500;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: 作業盤。上に事案バーと工程タブ、下に工程ごとの作業面（図＋編集パネル）。色は鋼板グレーに消防車の赤を一点、変動要因は琥珀。 */
+:root{
+  --bg:#edf0f3; --surface:#ffffff; --sunk:#f5f7f9; --ink:#17202a; --muted:#566272; --line:#d1d8e0; --line-strong:#aab4c0;
+  --accent:#b42318; --accent-ink:#ffffff; --accent-soft:#fbe8e5;
+  --var:#9a5d0c; --var-soft:#fcf0d6;
+  --ok:#2c7349; --ok-soft:#e2f1e7; --warn:#8d5300; --warn-soft:#fff2d3;
+  --c-m:#6a4c9c; --c-S:#1d5fa3; --c-H:#4a5866; --c-E:#2b7650; --c-L:#a9500d; --c-LL:#9c3474;
+  --f-display:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",sans-serif;
+  --f-body:"BIZ UDPGothic","Hiragino Sans","Yu Gothic","Meiryo",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --r:6px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11151a; --surface:#1a2027; --sunk:#151a20; --ink:#e5e9ee; --muted:#9ba6b3; --line:#2c353f; --line-strong:#47525e;
+  --accent:#ff6a5c; --accent-ink:#1a0d0b; --accent-soft:#3a1d1a;
+  --var:#e3a541; --var-soft:#33280f;
+  --ok:#62c08a; --ok-soft:#173023; --warn:#e9ac4a; --warn-soft:#33270f;
+  --c-m:#ae93e0; --c-S:#6aa8ec; --c-H:#a3b0bd; --c-E:#6cc495; --c-L:#ee9a55; --c-LL:#e07ab8;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11151a; --surface:#1a2027; --sunk:#151a20; --ink:#e5e9ee; --muted:#9ba6b3; --line:#2c353f; --line-strong:#47525e;
+  --accent:#ff6a5c; --accent-ink:#1a0d0b; --accent-soft:#3a1d1a;
+  --var:#e3a541; --var-soft:#33280f;
+  --ok:#62c08a; --ok-soft:#173023; --warn:#e9ac4a; --warn-soft:#33270f;
+  --c-m:#ae93e0; --c-S:#6aa8ec; --c-H:#a3b0bd; --c-E:#6cc495; --c-L:#ee9a55; --c-LL:#e07ab8;
+  color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.65}
+.wrap{max-width:1320px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 48px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.3}
+h2{font-size:20px} h3{font-size:16px}
+p{margin:0}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:12.5px}
+
+/* header */
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.brand{min-width:0}
+.eyebrow{font-size:11.5px;letter-spacing:.12em;color:var(--muted);font-weight:700}
+.brand h1{font-size:24px;margin-top:2px}
+.case{margin-top:4px;color:var(--muted);font-size:13px;overflow-wrap:anywhere}
+.top-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.save{font-size:12px;color:var(--muted)}
+.btn{border:1px solid var(--line-strong);background:var(--surface);border-radius:var(--r);padding:6px 12px;line-height:1.3}
+.btn:hover{border-color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--muted);padding:4px 8px}
+.btn.ghost:hover{color:var(--ink);border-color:var(--line)}
+.btn.danger{color:var(--accent)}
+.btn.sm{padding:3px 9px;font-size:12.5px}
+
+.sample-band{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;background:var(--var-soft);border:1px solid color-mix(in srgb,var(--var) 35%,transparent);border-radius:var(--r);padding:8px 12px;font-size:13px}
+.sample-band strong{color:var(--var)}
+
+/* tabs */
+.tabs{display:flex;gap:2px;margin-top:14px;overflow-x:auto;border-bottom:2px solid var(--line);scrollbar-width:thin}
+.tab{flex:0 0 auto;border:0;background:transparent;padding:10px 14px 9px;border-bottom:3px solid transparent;margin-bottom:-2px;color:var(--muted);font-weight:700;display:flex;gap:7px;align-items:baseline}
+.tab .no{font-family:var(--f-mono);font-size:11.5px}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.tab:hover{color:var(--ink)}
+.tab.guide{margin-left:auto}
+
+.panel{margin-top:20px}
+.lead{max-width:68ch;color:var(--muted);margin-top:6px}
+.sec-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:10px}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+.work{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;margin-top:16px;align-items:start}
+.work.why{grid-template-columns:300px minmax(0,1fr)}
+@media (max-width:980px){.work,.work.why,.grid2{grid-template-columns:minmax(0,1fr)}}
+
+/* forms */
+label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted);font-weight:700}
+label.check{flex-direction:row;align-items:flex-start;gap:8px;color:var(--ink);font-weight:400;font-size:13.5px}
+label.check input{margin-top:4px}
+input[type=text],input[type=number],input[type=datetime-local],input[type=month],select,textarea{background:var(--sunk);border:1px solid var(--line);border-radius:5px;padding:7px 9px;color:var(--ink);font-weight:400;font-size:14px;width:100%;min-width:0}
+textarea{resize:vertical;line-height:1.55}
+input:focus,select:focus,textarea:focus{border-color:var(--ink);outline:none}
+.form{display:flex;flex-direction:column;gap:12px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+fieldset{border:1px solid var(--line);border-radius:5px;padding:8px 10px;margin:0;min-width:0}
+legend{font-size:12.5px;color:var(--muted);font-weight:700;padding:0 4px}
+.preds{max-height:190px;overflow:auto;display:flex;flex-direction:column;gap:4px}
+.preds label.check{font-size:12.5px}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px}
+
+/* VTA canvas */
+.canvas-card{padding:0;overflow:hidden}
+.canvas-bar{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+.canvas{overflow:auto;max-height:78vh}
+.canvas svg{display:block}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);align-items:center}
+.lg{display:inline-flex;gap:6px;align-items:center}
+.sw{width:22px;height:13px;border:1px solid var(--line-strong);border-radius:3px;background:var(--surface)}
+.sw.var{border:2.5px solid var(--var);background:var(--var-soft);border-radius:7px}
+.sw.event{background:var(--accent);border-color:var(--accent)}
+.sw.x{border:0;background:none;color:var(--accent);font-weight:700;width:auto}
+
+svg .lane{fill:var(--surface)} svg .lane.odd{fill:var(--sunk)}
+svg .lane-name{fill:var(--ink);font-family:var(--f-display);font-weight:700;font-size:13.5px}
+svg .head-rule{stroke:var(--line-strong);stroke-width:1}
+svg .row-rule{stroke:var(--line);stroke-dasharray:2 4}
+svg .seq-label{fill:var(--muted);font-family:var(--f-mono);font-size:11px}
+svg .time-label{fill:var(--ink);font-family:var(--f-mono);font-size:11px}
+svg .edge{fill:none;stroke:var(--muted);stroke-width:1.4}
+svg .arrowhead{fill:var(--muted)}
+svg .node{cursor:pointer}
+svg .node .n-box{fill:var(--surface);stroke:var(--line-strong);stroke-width:1.2}
+svg .node:hover .n-box{stroke:var(--ink)}
+svg .node.var .n-box{fill:var(--var-soft);stroke:var(--var);stroke-width:3}
+svg .node.event .n-box{fill:var(--accent);stroke:var(--accent)}
+svg .node.event .n-text,svg .node.event .n-kind{fill:var(--accent-ink)}
+svg .node.sel .n-box{stroke:var(--ink);stroke-width:3;stroke-dasharray:6 3}
+svg .node:focus{outline:none} svg .node:focus-visible .n-box{stroke:var(--accent);stroke-width:3}
+svg .n-kind{fill:var(--muted);font-size:10.5px;font-weight:700}
+svg .node.var .n-kind{fill:var(--var)}
+svg .n-elim{fill:var(--accent);font-size:10.5px;font-weight:700}
+svg .n-text{fill:var(--ink);font-size:12.5px}
+svg .brk circle{fill:var(--surface);stroke:var(--accent);stroke-width:2}
+svg .brk path{stroke:var(--accent);stroke-width:2.4;stroke-linecap:round}
+svg .empty{fill:var(--muted);font-size:13px}
+
+/* chips */
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--c,var(--line-strong));color:var(--c,var(--muted));border-radius:999px;padding:0 8px;font-size:11.5px;font-weight:700;line-height:20px;white-space:nowrap}
+.chip.fill{background:var(--c);color:var(--surface);border-color:var(--c)}
+[data-shell="m"]{--c:var(--c-m)} [data-shell="S"]{--c:var(--c-S)} [data-shell="H"]{--c:var(--c-H)} [data-shell="E"]{--c:var(--c-E)} [data-shell="L"]{--c:var(--c-L)} [data-shell="LL"]{--c:var(--c-LL)}
+.chip.var{--c:var(--var)} .chip.elim{--c:var(--accent)} .chip.ok{--c:var(--ok)} .chip.warn{--c:var(--warn)}
+
+/* why tree */
+.targets{display:flex;flex-direction:column;gap:6px}
+.target{display:flex;flex-direction:column;gap:4px;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:9px 11px}
+.target[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 3px 0 0 var(--accent)}
+.target .t-text{font-size:13.5px;color:var(--ink)}
+.target .t-meta{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;font-size:11.5px;color:var(--muted)}
+.focus-node{display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:14px}
+.focus-node .q{font-family:var(--f-display);font-size:18px;font-weight:700}
+.tree,.tree ol{list-style:none;margin:0;padding:0}
+.tree ol{margin-left:22px;padding-left:14px;border-left:2px solid var(--line)}
+.tree li{margin-top:10px}
+.why-card{border:1px solid var(--line);border-left:4px solid var(--c);background:var(--surface);border-radius:var(--r);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.why-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.why-no{font-family:var(--f-mono);font-size:12px;font-weight:500;color:var(--muted)}
+.why-head select{width:auto;padding:3px 6px;font-size:12.5px}
+.why-actions{display:flex;flex-wrap:wrap;gap:6px}
+.lint{background:var(--warn-soft);color:var(--warn);border-radius:5px;padding:6px 9px;font-size:12.5px}
+.rootcause{display:flex;flex-direction:column;gap:6px;background:var(--ok-soft);border-radius:5px;padding:7px 10px;font-size:12.5px}
+.rootcause .rc{color:var(--ok);font-weight:700}
+details summary{cursor:pointer;color:var(--muted);font-size:12.5px}
+.dakara{margin-top:4px;font-size:12.5px;line-height:1.8}
+.dakara b{color:var(--ok)}
+
+/* summary */
+.stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-top:16px}
+@media (max-width:900px){.stats{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px}
+.stat .v{font-family:var(--f-mono);font-size:24px;font-variant-numeric:tabular-nums}
+.stat .k{font-size:12px;color:var(--muted)}
+.figure{overflow-x:auto}
+.figure svg{display:block;max-width:100%;height:auto}
+svg .shell-block{stroke-width:2}
+svg .shell-label{font-family:var(--f-display);font-weight:700;font-size:13px}
+svg .shell-count{font-family:var(--f-mono);font-size:20px}
+svg .shell-sub{font-size:10.5px;fill:var(--muted)}
+svg .slice{stroke:var(--line-strong);stroke-width:1.2}
+svg .hole{fill:var(--bg);stroke:var(--line-strong)}
+svg .ray{stroke:var(--accent);stroke-width:2;stroke-dasharray:6 4;fill:none}
+svg .ray-head{fill:var(--accent)}
+svg .cap{fill:var(--ink);font-size:11.5px;font-weight:700}
+svg .cap2{fill:var(--muted);font-size:10.5px}
+.bars{display:flex;flex-direction:column;gap:8px}
+.bar{display:grid;grid-template-columns:170px minmax(0,1fr) 30px;gap:8px;align-items:center;font-size:13px}
+.bar .track{height:10px;background:var(--sunk);border-radius:5px;overflow:hidden;border:1px solid var(--line)}
+.bar .fillb{height:100%;background:var(--c-L)}
+.bar .n{font-family:var(--f-mono);text-align:right}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:700;white-space:nowrap}
+
+/* measures */
+.cause-card{display:flex;flex-direction:column;gap:10px}
+.cause-head{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.cause-text{font-weight:700;font-size:15px;flex:1 1 280px;min-width:0}
+.ms{border:1px solid var(--line);border-radius:var(--r);padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--sunk)}
+.ms-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+@media (max-width:760px){.ms-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.ms-top{display:flex;gap:8px;align-items:center}
+.ms-no{font-family:var(--f-mono);font-size:12px;color:var(--muted);white-space:nowrap}
+.prio{font-family:var(--f-mono);font-size:12px;border-radius:4px;padding:1px 7px;white-space:nowrap}
+.prio.p-hi{background:var(--ok-soft);color:var(--ok)} .prio.p-md{background:var(--var-soft);color:var(--var)} .prio.p-lo{background:var(--sunk);color:var(--muted);border:1px solid var(--line)}
+svg .mx-cell{fill:var(--sunk);stroke:var(--line)}
+svg .mx-cell.best{fill:var(--ok-soft)}
+svg .mx-axis{fill:var(--muted);font-size:11px}
+svg .mx-dot{fill:var(--accent)}
+svg .mx-lbl{fill:var(--accent-ink);font-family:var(--f-mono);font-size:10px}
+.kono{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;font-size:12.5px}
+.kono div{border:1px solid var(--line);border-radius:5px;padding:5px 8px;display:flex;justify-content:space-between;gap:6px;background:var(--surface)}
+.kono div.on{border-color:var(--ok);background:var(--ok-soft)}
+.kono .g{font-size:11px;color:var(--muted);grid-column:1/-1;margin-top:4px;font-weight:700;letter-spacing:.06em}
+
+/* overview */
+.steps{display:flex;flex-direction:column;gap:0;counter-reset:s}
+.step{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 0;border-bottom:1px solid var(--line)}
+.step:last-child{border-bottom:0}
+.step .dot{width:22px;height:22px;border-radius:50%;border:2px solid var(--line-strong);display:grid;place-items:center;font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.step.done .dot{background:var(--ok);border-color:var(--ok);color:var(--surface)}
+.step .st{font-weight:700}
+.note{border-left:3px solid var(--accent);padding:4px 0 4px 12px;color:var(--muted);font-size:13px;max-width:70ch}
+
+/* guide */
+.guide-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:16px;margin-top:16px}
+.guide-grid article{display:flex;flex-direction:column;gap:8px}
+.guide-grid article p,.guide-grid li{font-size:13.5px;max-width:68ch}
+.guide-grid ul,.guide-grid ol{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:3px}
+.src{font-size:12px;color:var(--muted)}
+
+/* report */
+.report{width:100%;min-height:60vh;font-family:var(--f-body);font-size:13.5px;line-height:1.7;background:var(--surface)}
+
+dialog{border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--ink);padding:18px;width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 48px)}
+dialog::backdrop{background:rgba(10,14,20,.5)}
+dialog .form{gap:14px}
+dialog textarea{font-family:var(--f-mono);font-size:12px}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:6px;font-size:13px;z-index:20;max-width:calc(100vw - 32px)}
+@media (prefers-reduced-motion:no-preference){.tab,.btn{transition:color .15s,border-color .15s}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="eyebrow">ヒューマンファクター事故分析</div>
+      <h1>VTA・なぜなぜ分析ボード</h1>
+      <div class="case" id="case-title"></div>
+    </div>
+    <div class="top-actions">
+      <span class="save" id="save-state" role="status"></span>
+      <button class="btn" data-act="open-data">データの保存・読込</button>
+      <button class="btn" data-act="ask-new">新しい分析</button>
+    </div>
+  </header>
+  <div class="sample-band" id="sample-band" hidden>
+    <strong>サンプル表示中</strong><span>架空の横転事例です。実際の事案ではありません。「新しい分析」で白紙から始められます。</span>
+  </div>
+  <nav class="tabs" role="tablist" id="tabs"></nav>
+  <main id="panel" class="panel"></main>
+</div>
+
+<dialog id="dlg-data">
+  <form class="form" method="dialog" onsubmit="return false">
+    <h3>データの保存・読込</h3>
+    <p class="small muted">入力内容はこのブラウザに自動保存されます。別の端末や他の人と共有するときは、下のJSONをコピーして渡してください。</p>
+    <label>現在の分析データ（JSON）<textarea id="json-out" rows="7" readonly></textarea></label>
+    <div class="btnrow"><button class="btn" data-act="copy-json">コピー</button><button class="btn" data-act="download-json">ファイルに保存</button></div>
+    <label>読み込むJSON（貼り付け）<textarea id="json-in" rows="5" placeholder="ここにJSONを貼り付け"></textarea></label>
+    <label>またはJSONファイルを選択<input type="file" id="json-file" accept="application/json,.json"></label>
+    <div class="btnrow"><button class="btn primary" data-act="import-json">読み込んで置き換える</button><button class="btn ghost" data-act="close-dlg">閉じる</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-confirm">
+  <form class="form" method="dialog" onsubmit="return false">
+    <h3 id="confirm-title"></h3>
+    <p id="confirm-msg" class="muted"></p>
+    <div class="btnrow"><button class="btn primary" data-act="confirm-yes">実行する</button><button class="btn ghost" data-act="close-dlg">やめる</button></div>
+  </form>
+</dialog>
+
+<div id="toast" hidden></div>
+
+<script>
+const KEY = 'hf-vta-why-v1';
+const SHELL = {
+  m:  {label:'m 管理',      name:'管理（Management）',   desc:'組織・管理。方針、体制、教育制度、人員配置、安全文化'},
+  S:  {label:'S ソフト',    name:'ソフトウェア',         desc:'規則・マニュアル・手順・訓練内容・表示'},
+  H:  {label:'H ハード',    name:'ハードウェア',         desc:'車両・装備・機器の設計や状態'},
+  E:  {label:'E 環境',      name:'環境',                 desc:'天候・路面・照明・時間帯・道路形状'},
+  L:  {label:'L 本人',      name:'本人（Liveware）',     desc:'当事者の心身状態・知識・技能・判断'},
+  LL: {label:'L-L 周囲',    name:'周囲の人（L-L）',      desc:'指揮者・隊員間の連携、コミュニケーション、雰囲気'}
+};
+const ERR = {
+  '':        '分類なし',
+  slip:      'スリップ（意図は正しいが実行を誤る）',
+  lapse:     'ラプス（記憶の抜け・やり忘れ）',
+  mistakeR:  'ミステイク・規則ベース（当てはめる規則を誤る）',
+  mistakeK:  'ミステイク・知識ベース（知識不足で判断を誤る）',
+  violation: '違反（意図的な逸脱）'
+};
+const KONO = ['やめる（なくす）','できないようにする','わかりやすくする','やりやすくする','知覚能力を持たせる','認知・予測させる','安全を優先させる','できる能力を持たせる','自分で気づかせる','検出する','備える'];
+const LEVELS = [
+  {id:'elim', label:'除去・代替'},
+  {id:'eng',  label:'工学的対策（装備・設計）'},
+  {id:'adm',  label:'管理的対策（規則・体制）'},
+  {id:'edu',  label:'教育・訓練'},
+  {id:'att',  label:'注意喚起のみ'}
+];
+const KINDS = {act:'行為', judge:'判断', state:'状態', event:'事故事象'};
+const BLAME = /注意不足|不注意|確認不足|気を?付け|意識が低|意識不足|怠|うっかり|油断|慢心|たるみ|自覚が|認識不足|ミスした|徹底/;
+const TABS = [
+  {id:'overview', no:'1', label:'事案概要'},
+  {id:'vta',      no:'2', label:'VTA'},
+  {id:'why',      no:'3', label:'なぜなぜ'},
+  {id:'factors',  no:'4', label:'要因整理'},
+  {id:'measures', no:'5', label:'対策'},
+  {id:'report',   no:'6', label:'報告書'},
+  {id:'guide',    no:'',  label:'理論ガイド', cls:'guide'}
+];
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid = p => p + Math.random().toString(36).slice(2, 8);
+
+function sample(){
+  const e = (from,to) => ({from,to});
+  return {
+    version:1, isSample:true,
+    meta:{
+      title:'【架空事例】水槽付ポンプ車 出場途上の横転事故',
+      date:'2026-09-12T21:40', place:'○○市△△町 市道（下り勾配の右カーブ）',
+      vehicle:'水槽付消防ポンプ自動車（水槽2,000L・満水）', crew:'4名（車両指揮者・機関員・隊員2名）',
+      weather:'雨', road:'湿潤',
+      summary:'建物火災（逃げ遅れ情報あり）への出場途上、下り勾配の右カーブに進入した際に車両が左側へ横転した。',
+      damage:'隊員2名軽傷、車両大破。第三者被害なし。'
+    },
+    lanes:[{id:'l1',name:'機関員'},{id:'l2',name:'車両指揮者'},{id:'l3',name:'車両'},{id:'l4',name:'道路・環境'},{id:'l5',name:'組織・運用'}],
+    nodes:[
+      {id:'n1', lane:'l5',seq:1,time:'2か月前',kind:'state',text:'新型車へ更新。慣熟訓練は直線・発進停止が中心',variation:true,elim:true,note:''},
+      {id:'n2', lane:'l3',seq:1,time:'',kind:'state',text:'新型車は旧型より重心が高く、満水時の横揺れが大きい',variation:true,elim:false,note:''},
+      {id:'n3', lane:'l5',seq:2,time:'21:31',kind:'act',text:'建物火災・逃げ遅れ情報ありで出場指令',variation:false,elim:false,note:''},
+      {id:'n4', lane:'l2',seq:3,time:'21:32',kind:'judge',text:'逃げ遅れ情報から早期到着を強く意識',variation:true,elim:false,note:''},
+      {id:'n5', lane:'l4',seq:3,time:'',kind:'state',text:'夜間・雨で路面湿潤',variation:true,elim:false,note:''},
+      {id:'n6', lane:'l1',seq:4,time:'21:33',kind:'act',text:'緊急走行で現場へ向かう',variation:false,elim:false,note:''},
+      {id:'n7', lane:'l2',seq:5,time:'21:39',kind:'act',text:'無線と地図の確認に集中し、速度の助言なし',variation:true,elim:true,note:''},
+      {id:'n8', lane:'l1',seq:5,time:'21:39',kind:'judge',text:'下りの右カーブを旧型車の感覚で進入可能と判断',variation:true,elim:true,note:''},
+      {id:'n9', lane:'l1',seq:6,time:'21:40',kind:'act',text:'約50km/hでカーブへ進入',variation:true,elim:false,note:''},
+      {id:'n10',lane:'l3',seq:7,time:'',kind:'state',text:'水槽内の水が片寄り、横方向の荷重が増大',variation:false,elim:false,note:''},
+      {id:'n11',lane:'l1',seq:8,time:'',kind:'act',text:'急なハンドル修正とブレーキ操作',variation:true,elim:false,note:''},
+      {id:'n12',lane:'l3',seq:9,time:'21:40',kind:'event',text:'左側へ横転',variation:false,elim:false,note:''}
+    ],
+    edges:[e('n1','n8'),e('n2','n10'),e('n3','n4'),e('n4','n6'),e('n4','n7'),e('n6','n8'),e('n7','n9'),e('n8','n9'),e('n5','n9'),e('n9','n10'),e('n10','n11'),e('n11','n12'),e('n5','n11')],
+    whys:[
+      {id:'w1', nodeId:'n8',parentId:null,text:'旧型車での運転経験に基づく速度感覚で判断した',shell:'L',err:'mistakeR'},
+      {id:'w2', nodeId:'n8',parentId:'w1',text:'新型車のカーブでの限界挙動を体験・教育されていなかった',shell:'S',err:''},
+      {id:'w3', nodeId:'n8',parentId:'w2',text:'慣熟訓練のカリキュラムに満水時のカーブ走行が含まれていない',shell:'S',err:''},
+      {id:'w4', nodeId:'n8',parentId:'w3',text:'車両更新時の訓練内容を定める基準・責任部署がない',shell:'m',err:''},
+      {id:'w5', nodeId:'n8',parentId:null,text:'下り勾配で速度が上がりやすい区間だと認識していなかった',shell:'L',err:'mistakeK'},
+      {id:'w6', nodeId:'n8',parentId:'w5',text:'出場経路上の危険箇所の情報が隊内で共有されていない',shell:'m',err:''},
+      {id:'w7', nodeId:'n8',parentId:null,text:'逃げ遅れ情報で、早く着かなければという切迫感があった',shell:'L',err:''},
+      {id:'w8', nodeId:'n8',parentId:'w7',text:'緊急走行時のカーブ進入速度の目安が定められていない',shell:'S',err:''},
+      {id:'w9', nodeId:'n7',parentId:null,text:'車両指揮者が無線・地図確認と運転監視を一人で担っていた',shell:'LL',err:''},
+      {id:'w10',nodeId:'n7',parentId:'w9',text:'出場途上の役割分担（ナビ担当・速度コール）が決められていない',shell:'S',err:''},
+      {id:'w11',nodeId:'n7',parentId:'w10',text:'出場途上の乗務員連携を訓練する機会がない',shell:'m',err:''},
+      {id:'w12',nodeId:'n7',parentId:null,text:'経験の長い機関員の運転に口を出しにくい雰囲気があった',shell:'LL',err:''},
+      {id:'w13',nodeId:'n7',parentId:'w12',text:'階級や経験に関係なく安全上の指摘をする手順・文化がない',shell:'m',err:''},
+      {id:'w14',nodeId:'n1',parentId:null,text:'訓練担当者の確認不足',shell:'L',err:'lapse'}
+    ],
+    measures:[
+      {id:'m1',whyId:'w4', text:'車両更新時の慣熟訓練基準を策定し、満水時のカーブ・制動・回避操作を必須項目にする',kono:7,level:'adm',eff:3,feas:3,owner:'警防課',due:'2026-12'},
+      {id:'m2',whyId:'w4', text:'次期更新車両の仕様に横滑り防止装置と横転警報装置を加える',kono:1,level:'eng',eff:3,feas:2,owner:'車両担当',due:'2027-04'},
+      {id:'m3',whyId:'w6', text:'管内の危険カーブ地点を地図化し、車載端末で接近時に表示する',kono:5,level:'eng',eff:2,feas:2,owner:'警防課',due:'2027-03'},
+      {id:'m4',whyId:'w8', text:'緊急走行時のカーブ進入速度の目安を運用要領に明記する',kono:6,level:'adm',eff:2,feas:3,owner:'警防課',due:'2026-12'},
+      {id:'m5',whyId:'w11',text:'出場途上の役割（ナビ担当・速度コール）を定め、乗車訓練で反復する',kono:9,level:'edu',eff:2,feas:3,owner:'各署',due:'2027-01'},
+      {id:'m6',whyId:'w14',text:'訓練担当者へ注意喚起する',kono:6,level:'att',eff:1,feas:3,owner:'訓練係',due:'2026-11'}
+    ]
+  };
+}
+function blank(){
+  return {version:1,isSample:false,
+    meta:{title:'',date:'',place:'',vehicle:'',crew:'',weather:'',road:'',summary:'',damage:''},
+    lanes:[{id:uid('l'),name:'機関員'},{id:uid('l'),name:'車両指揮者'},{id:uid('l'),name:'隊員'},{id:uid('l'),name:'車両'},{id:uid('l'),name:'道路・環境'},{id:uid('l'),name:'組織・運用'}],
+    nodes:[],edges:[],whys:[],measures:[]};
+}
+
+let S = null;
+try { const raw = localStorage.getItem(KEY); if (raw) S = JSON.parse(raw); } catch(_){}
+if (!valid(S)) S = sample();
+const ui = {tab:'overview', sel:null, target:null, confirm:null, lastLane:null};
+try { const t = localStorage.getItem(KEY+':tab'); if (TABS.some(x=>x.id===t)) ui.tab = t; } catch(_){}
+
+function valid(d){ return d && typeof d==='object' && d.meta && Array.isArray(d.lanes) && Array.isArray(d.nodes) && Array.isArray(d.edges) && Array.isArray(d.whys) && Array.isArray(d.measures); }
+
+let saveTimer = null;
+function save(){
+  $('#save-state').textContent = '保存中…';
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    let ok = true;
+    try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(_){ ok = false; }
+    $('#save-state').textContent = ok ? 'このブラウザに自動保存済み' : '自動保存できません。「データの保存・読込」から書き出してください';
+  }, 300);
+}
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(toast.tm); toast.tm = setTimeout(() => t.hidden = true, 2600);
+}
+
+/* ---------- derived ---------- */
+const nodeById = id => S.nodes.find(n => n.id === id);
+const laneName = id => S.lanes.find(l => l.id === id)?.name || '（削除されたレーン）';
+const childrenOf = id => S.whys.filter(w => w.parentId === id);
+const leaves = () => S.whys.filter(w => !S.whys.some(x => x.parentId === w.id));
+function depthOf(w){ let d = 1, p = w; while (p.parentId){ p = S.whys.find(x => x.id === p.parentId); if (!p) break; d++; } return d; }
+function chainUp(w){ const a = [w]; let p = w; while (p.parentId){ p = S.whys.find(x => x.id === p.parentId); if (!p) break; a.push(p); } return a; }
+const targets = () => S.nodes.filter(n => n.variation || n.elim).sort((a,b) => (b.elim - a.elim) || (a.seq - b.seq));
+const nextSeq = () => S.nodes.reduce((m,n) => Math.max(m, +n.seq || 0), 0) + 1;
+const prio = m => (+m.eff || 0) * (+m.feas || 0);
+const msNo = m => S.measures.indexOf(m) + 1;
+
+function shellChip(k, fill){ return k ? `<span class="chip ${fill?'fill':''}" data-shell="${k}">${esc(SHELL[k].label)}</span>` : ''; }
+
+/* ---------- shell ---------- */
+function renderHeader(){
+  $('#case-title').textContent = S.meta.title || '事案名が未入力です';
+  $('#sample-band').hidden = !S.isSample;
+  $('#tabs').innerHTML = TABS.map(t => `<button class="tab ${t.cls||''}" role="tab" aria-selected="${ui.tab===t.id}" data-act="tab" data-id="${t.id}">${t.no?`<span class="no">${t.no}</span>`:''}${t.label}</button>`).join('');
+}
+function render(){
+  renderHeader();
+  const f = {overview:renderOverview, vta:renderVTA, why:renderWhy, factors:renderFactors, measures:renderMeasures, report:renderReport, guide:renderGuide}[ui.tab];
+  $('#panel').innerHTML = f();
+}
+
+/* ---------- 1 overview ---------- */
+function progress(){
+  const elims = S.nodes.filter(n => n.elim);
+  const lv = leaves();
+  return [
+    {t:'事案の事実を記録する', d:'日時・場所・車両・気象・被害を、評価を交えず事実として書く。', done:!!(S.meta.title && S.meta.summary), tab:'overview'},
+    {t:'VTAで時系列を並べる', d:'行為者・要素ごとのレーンに、行為・判断・状態を時間順に置き、矢印でつなぐ。', done:S.nodes.length >= 5 && S.edges.length >= 4, tab:'vta'},
+    {t:'変動要因と排除ノードを決める', d:'通常と違った点を変動要因に、連鎖を断てた点を排除ノードにする。', done:S.nodes.some(n => n.variation) && elims.length > 0, tab:'vta'},
+    {t:'排除ノードごとに、なぜなぜ分析をする', d:'対策が打てる仕組みのレベルまで掘り下げ、各要因をm-SHELLで分類する。', done:elims.length > 0 && elims.every(n => S.whys.some(w => w.nodeId === n.id)), tab:'why'},
+    {t:'根本要因すべてに対策を立てる', d:'河野の発想手順と対策の階層で、注意喚起に頼らない対策を選ぶ。', done:lv.length > 0 && lv.every(w => S.measures.some(m => m.whyId === w.id)), tab:'measures'}
+  ];
+}
+function renderOverview(){
+  const m = S.meta;
+  const fld = (k, label, type='text') => `<label>${label}<input type="${type}" id="meta-${k}" data-meta="${k}" value="${esc(m[k])}"></label>`;
+  const steps = progress();
+  return `
+  <div class="grid2">
+    <section class="card form">
+      <h2>事案の記録</h2>
+      <p class="small muted">わかっている事実だけを書きます。推測や評価は、VTAとなぜなぜの段階で扱います。</p>
+      ${fld('title','事案名')}
+      <div class="row2">${fld('date','発生日時','datetime-local')}${fld('place','発生場所')}</div>
+      <div class="row2">${fld('vehicle','車両')}${fld('crew','乗車人員')}</div>
+      <div class="row2">${fld('weather','天候')}${fld('road','路面状態')}</div>
+      <label>事案の概要<textarea id="meta-summary" data-meta="summary" rows="4">${esc(m.summary)}</textarea></label>
+      <label>被害の状況<textarea id="meta-damage" data-meta="damage" rows="2">${esc(m.damage)}</textarea></label>
+    </section>
+    <section class="card">
+      <h2>分析の進め方</h2>
+      <div class="steps" style="margin-top:8px">
+        ${steps.map((s,i) => `<div class="step ${s.done?'done':''}"><span class="dot">${s.done?'✓':i+1}</span><div><div class="st">${s.t}</div><div class="small muted">${s.d}</div></div><button class="btn sm" data-act="tab" data-id="${s.tab}">開く</button></div>`).join('')}
+      </div>
+      <div style="margin-top:14px" class="note">この分析の目的は再発防止です。個人の責任追及ではなく、「なぜその行動が、その時その人にとって合理的に見えたのか」を明らかにします（公正な文化 / Just Culture）。</div>
+    </section>
+  </div>`;
+}
+
+/* ---------- 2 VTA ---------- */
+function wrapText(t, n, max){
+  const ch = [...t], out = [];
+  while (ch.length && out.length < max) out.push(ch.splice(0, n).join(''));
+  if (ch.length) out[max-1] = [...out[max-1]].slice(0, -1).join('') + '…';
+  return out;
+}
+function vtaSVG(){
+  const L = S.lanes, N = S.nodes;
+  const TW = 70, W = 178, BW = 152, BH = 78, RH = 104, HEAD = 48, PAD = 14;
+  const seqs = [...new Set(N.map(n => +n.seq || 0))].sort((a,b) => a-b);
+  const cnt = {}, slot = {}, rowMax = {}, rowY = {}, pos = {};
+  seqs.forEach(s => rowMax[s] = 1);
+  [...N].sort((a,b) => a.seq - b.seq).forEach(n => {
+    const k = n.lane + '|' + (+n.seq||0); cnt[k] = (cnt[k]||0) + 1; slot[n.id] = cnt[k]-1;
+    rowMax[+n.seq||0] = Math.max(rowMax[+n.seq||0], cnt[k]);
+  });
+  let y = HEAD + PAD;
+  seqs.forEach(s => { rowY[s] = y; y += rowMax[s] * RH; });
+  const height = Math.max(y + PAD, HEAD + RH + PAD), width = TW + L.length * W + PAD;
+  N.forEach(n => { const li = L.findIndex(l => l.id === n.lane); if (li < 0) return;
+    pos[n.id] = {x: TW + li*W + (W-BW)/2, y: rowY[+n.seq||0] + slot[n.id]*RH + (RH-BH)/2}; });
+
+  let g = `<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>`;
+  g += `<rect class="lane" x="0" y="0" width="${TW}" height="${height}"/><text class="seq-label" x="10" y="28">順序 / 時刻</text>`;
+  L.forEach((l,i) => { g += `<rect class="lane ${i%2?'':'odd'}" x="${TW+i*W}" y="0" width="${W}" height="${height}"/><text class="lane-name" x="${TW+i*W+W/2}" y="29" text-anchor="middle">${esc(l.name)}</text>`; });
+  g += `<line class="head-rule" x1="0" x2="${width}" y1="${HEAD}" y2="${HEAD}"/>`;
+  seqs.forEach((s,i) => {
+    const t = N.find(n => (+n.seq||0) === s && n.time)?.time || '';
+    if (i) g += `<line class="row-rule" x1="0" x2="${width}" y1="${rowY[s]}" y2="${rowY[s]}"/>`;
+    g += `<text class="seq-label" x="10" y="${rowY[s]+RH/2-4}">#${s}</text><text class="time-label" x="10" y="${rowY[s]+RH/2+12}">${esc(t)}</text>`;
+  });
+  const brk = [];
+  S.edges.forEach(e => {
+    const a = pos[e.from], b = pos[e.to]; if (!a || !b) return;
+    let d, mx, my;
+    if (b.y > a.y + 4){
+      const x1 = a.x+BW/2, y1 = a.y+BH, x2 = b.x+BW/2, y2 = b.y, dy = (y2-y1)/2;
+      d = `M${x1},${y1} C${x1},${y1+dy} ${x2},${y2-dy} ${x2},${y2}`;
+      const t = Math.min(.5, 30/Math.max(1, y2-y1) + .1), u = 1-t;
+      mx = u*u*u*x1 + 3*u*u*t*x1 + 3*u*t*t*x2 + t*t*t*x2; my = u*u*u*y1 + 3*u*u*t*(y1+dy) + 3*u*t*t*(y2-dy) + t*t*t*y2;
+    } else {
+      const dir = b.x >= a.x ? 1 : -1;
+      const x1 = a.x + (dir>0?BW:0), y1 = a.y+BH/2, x2 = b.x + (dir>0?0:BW), y2 = b.y+BH/2;
+      d = `M${x1},${y1} L${x2},${y2}`; mx = x1 + (x2-x1)*.3; my = y1 + (y2-y1)*.3;
+    }
+    g += `<path class="edge" d="${d}" marker-end="url(#arrow)"/>`;
+    if (nodeById(e.from)?.elim) brk.push([mx,my]);
+  });
+  brk.forEach(([x,y]) => { g += `<g class="brk" transform="translate(${x},${y})"><circle r="9"/><path d="M-4,-4 L4,4 M4,-4 L-4,4"/></g>`; });
+  N.forEach(n => {
+    const p = pos[n.id]; if (!p) return;
+    const cls = ['node', n.kind==='event'?'event':'', n.variation?'var':'', ui.sel===n.id?'sel':''].join(' ');
+    const lines = wrapText(n.text || '（内容未入力）', 11, 3);
+    g += `<g class="${cls}" data-act="sel-node" data-id="${n.id}" transform="translate(${p.x},${p.y})" tabindex="0" role="button" aria-label="${esc(KINDS[n.kind]+'：'+n.text)}">
+      <rect class="n-box" width="${BW}" height="${BH}" rx="${n.variation?18:5}"/>
+      <text class="n-kind" x="11" y="17">${KINDS[n.kind]}${n.variation?'・変動':''}</text>
+      ${n.elim?`<text class="n-elim" x="${BW-11}" y="17" text-anchor="end">✕ 排除</text>`:''}
+      ${lines.map((t,i) => `<text class="n-text" x="11" y="${37+i*15.5}">${esc(t)}</text>`).join('')}
+    </g>`;
+  });
+  if (!N.length) g += `<text class="empty" x="${TW+16}" y="${HEAD+50}">右のパネルから最初のノードを追加してください。</text>`;
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="VTA図">${g}</svg>`;
+}
+function nodeForm(){
+  const n = nodeById(ui.sel), isNew = !n;
+  const d = n || {lane: ui.lastLane || S.lanes[0]?.id, seq: nextSeq(), time:'', kind:'act', text:'', variation:false, elim:false, note:''};
+  const preds = n ? S.edges.filter(e => e.to === n.id).map(e => e.from) : [];
+  const others = S.nodes.filter(x => x.id !== d.id).sort((a,b) => a.seq - b.seq);
+  return `
+  <div class="form">
+    <div class="sec-head"><h3>${isNew?'ノードを追加':'ノードを編集'}</h3>${isNew?'':`<button class="btn ghost sm" data-act="new-node">＋ 新規</button>`}</div>
+    <label>行為者・要素（レーン）<select id="f-lane">${S.lanes.map(l => `<option value="${l.id}" ${l.id===d.lane?'selected':''}>${esc(l.name)}</option>`).join('')}</select></label>
+    <div class="row2">
+      <label>順序（同じ番号は同時刻）<input type="number" id="f-seq" min="0" value="${esc(d.seq)}"></label>
+      <label>時刻<input type="text" id="f-time" value="${esc(d.time)}" placeholder="21:39"></label>
+    </div>
+    <label>種別<select id="f-kind">${Object.entries(KINDS).map(([k,v]) => `<option value="${k}" ${k===d.kind?'selected':''}>${v}</option>`).join('')}</select></label>
+    <label>内容（主語＋述語で短く）<textarea id="f-text" rows="3">${esc(d.text)}</textarea></label>
+    <label class="check"><input type="checkbox" id="f-var" ${d.variation?'checked':''}><span><b>変動要因</b><br><span class="small muted">いつもと違った行為・判断・状態</span></span></label>
+    <label class="check"><input type="checkbox" id="f-elim" ${d.elim?'checked':''}><span><b>排除ノード</b><br><span class="small muted">ここで連鎖を断てば事故に至らなかった点</span></span></label>
+    <fieldset><legend>直前のノード（矢印の出発点）</legend>
+      <div class="preds">${others.length ? others.map(o => `<label class="check"><input type="checkbox" class="f-pred" value="${o.id}" ${preds.includes(o.id)?'checked':''}><span><span class="mono muted">#${o.seq}</span> ${esc(laneName(o.lane))}：${esc(o.text.slice(0,22))}</span></label>`).join('') : '<span class="small muted">まだ他のノードがありません</span>'}</div>
+    </fieldset>
+    <label>メモ（根拠・証言の出典など）<textarea id="f-note" rows="2">${esc(d.note)}</textarea></label>
+    <div class="btnrow">
+      <button class="btn primary" data-act="save-node">${isNew?'追加する':'更新する'}</button>
+      ${isNew?'':`<button class="btn danger" data-act="del-node">削除</button><button class="btn ghost" data-act="goto-why" data-id="${n.id}">なぜなぜへ →</button>`}
+    </div>
+  </div>
+  <details style="margin-top:18px">
+    <summary>レーン（行為者・要素）を編集</summary>
+    <div class="form" style="margin-top:10px">
+      ${S.lanes.map((l,i) => `<div class="ms-top"><input type="text" id="lane-${l.id}" data-lane="${l.id}" value="${esc(l.name)}" aria-label="レーン名">
+        <button class="btn ghost sm" data-act="lane-move" data-id="${l.id}" data-dir="-1" ${i?'':'disabled'} aria-label="左へ">←</button>
+        <button class="btn ghost sm" data-act="lane-move" data-id="${l.id}" data-dir="1" ${i<S.lanes.length-1?'':'disabled'} aria-label="右へ">→</button>
+        <button class="btn ghost sm" data-act="lane-del" data-id="${l.id}" aria-label="削除">✕</button></div>`).join('')}
+      <button class="btn sm" data-act="lane-add">＋ レーンを追加</button>
+    </div>
+  </details>`;
+}
+function renderVTA(){
+  return `
+  <div class="sec-head"><div><h2>VTA（バリエーションツリー分析）</h2>
+    <p class="lead">関係した人・車両・環境・組織をレーンに分け、出来事を時間順に並べます。通常と違った点が<b>変動要因</b>、そこで断てば事故に至らなかった点が<b>排除ノード</b>です。ノードをクリックすると編集できます。</p></div></div>
+  <div class="work">
+    <section class="card canvas-card">
+      <div class="canvas-bar">
+        <div class="legend">
+          <span class="lg"><span class="sw"></span>通常の行為・状態</span>
+          <span class="lg"><span class="sw var"></span>変動要因</span>
+          <span class="lg"><span class="sw x">✕</span>排除ノードからの連鎖を断つ点</span>
+          <span class="lg"><span class="sw event"></span>事故事象</span>
+        </div>
+        <span class="small muted mono">${S.nodes.length} ノード ／ ${S.edges.length} 矢印</span>
+      </div>
+      <div class="canvas">${vtaSVG()}</div>
+    </section>
+    <aside class="card">${nodeForm()}</aside>
+  </div>`;
+}
+
+/* ---------- 3 why ---------- */
+function blameMsg(){ return '「注意不足」「確認不足」などは結果の言い換えで、対策が「注意する」で止まりがちです。なぜ注意が向かなかったのか、何がそうさせたのかを、もう一段掘り下げてください。'; }
+function whyItem(w, depth){
+  const kids = childrenOf(w.id);
+  const showErr = w.shell === 'L' || w.shell === 'LL';
+  const chain = chainUp(w);
+  const node = nodeById(w.nodeId);
+  return `<li><div class="why-card" data-shell="${w.shell}">
+    <div class="why-head">
+      <span class="why-no">なぜ${depth}</span>
+      <select id="ws-${w.id}" data-why="${w.id}" data-field="shell" aria-label="m-SHELL分類">${Object.entries(SHELL).map(([k,v]) => `<option value="${k}" ${k===w.shell?'selected':''}>${v.label}</option>`).join('')}</select>
+      ${showErr?`<select id="we-${w.id}" data-why="${w.id}" data-field="err" aria-label="エラーの型">${Object.entries(ERR).map(([k,v]) => `<option value="${k}" ${k===w.err?'selected':''}>${v}</option>`).join('')}</select>`:''}
+    </div>
+    <textarea id="wt-${w.id}" data-why="${w.id}" data-field="text" rows="2" placeholder="なぜそうなったのか（事実に基づいて）" aria-label="要因">${esc(w.text)}</textarea>
+    <div class="lint" ${BLAME.test(w.text)?'':'hidden'}>${blameMsg()}</div>
+    ${kids.length ? '' : `<div class="rootcause"><span class="rc">根本要因として扱います${S.measures.some(m => m.whyId===w.id)?'（対策あり）':'（対策未設定）'}</span>
+      ${depth < 3 ? '<span>まだ浅いかもしれません。規則・教育・装備・体制など、仕組みのレベルに届くまで掘り下げましょう。</span>' : ''}
+      <details><summary>逆読み確認（「だから」でつながるか）</summary><div class="dakara">${chain.map(c => esc(c.text||'（未入力）')).join(' <b>だから</b> ')} <b>だから</b> ${esc(node?.text||'')}</div></details></div>`}
+    <div class="why-actions">
+      <button class="btn sm" data-act="why-child" data-id="${w.id}">＋ さらに、なぜ？</button>
+      <button class="btn ghost sm" data-act="why-sib" data-id="${w.id}">＋ 並列の要因</button>
+      <button class="btn ghost sm danger" data-act="why-del" data-id="${w.id}">削除</button>
+    </div>
+  </div>${kids.length ? `<ol>${kids.map(k => whyItem(k, depth+1)).join('')}</ol>` : ''}</li>`;
+}
+function renderWhy(){
+  const ts = targets();
+  if (!ui.target || !ts.some(t => t.id === ui.target)) ui.target = ts[0]?.id || null;
+  const n = nodeById(ui.target);
+  const roots = n ? S.whys.filter(w => w.nodeId === n.id && !w.parentId) : [];
+  return `
+  <div class="sec-head"><div><h2>なぜなぜ分析</h2>
+    <p class="lead">VTAで決めた排除ノード・変動要因ごとに「なぜ」を繰り返します。各要因はm-SHELLで分類し、当事者（L）や周囲（L-L）の要因にはエラーの型を付けます。対策が打てる仕組みに届いたら、そこが根本要因です。</p></div></div>
+  <div class="work why">
+    <aside class="targets" aria-label="分析対象">
+      ${ts.length ? ts.map(t => { const c = S.whys.filter(w => w.nodeId === t.id).length;
+        return `<button class="target" aria-pressed="${t.id===ui.target}" data-act="sel-target" data-id="${t.id}">
+          <span class="t-meta">${t.elim?'<span class="chip elim">✕ 排除</span>':''}${t.variation?'<span class="chip var">変動</span>':''}<span class="mono">#${t.seq}</span>${esc(laneName(t.lane))}</span>
+          <span class="t-text">${esc(t.text)}</span>
+          <span class="t-meta">${c ? `なぜ ${c} 件` : '<span class="chip warn">未分析</span>'}</span></button>`; }).join('')
+        : `<div class="card small muted">VTAで変動要因か排除ノードを指定すると、ここに分析対象として並びます。</div>`}
+    </aside>
+    <section class="card">
+      ${n ? `<div class="focus-node">
+          <span class="t-meta small muted">${esc(laneName(n.lane))} ／ ${KINDS[n.kind]} ／ #${n.seq} ${esc(n.time)}</span>
+          <div class="q">${esc(n.text)}　──なぜ？</div>
+        </div>
+        <ol class="tree">${roots.map(w => whyItem(w, 1)).join('')}</ol>
+        <div style="margin-top:14px"><button class="btn primary" data-act="why-root">＋ 直接の要因を追加</button></div>`
+        : `<p class="muted">左の一覧から分析対象を選んでください。</p>`}
+    </section>
+  </div>`;
+}
+
+/* ---------- 4 factors ---------- */
+function shellDiagram(all, rc){
+  const box = (k, x, y, w, h) => {
+    const c = all[k] || 0, r = rc[k] || 0, op = c ? Math.min(.12 + c*.08, .5) : 0;
+    return `<g data-shell="${k}"><rect class="shell-block" x="${x}" y="${y}" width="${w}" height="${h}" rx="8" style="fill:var(--c);fill-opacity:${op};stroke:var(--c)"/>
+      <text class="shell-label" x="${x+w/2}" y="${y+22}" text-anchor="middle" style="fill:var(--c)">${k==='LL'?'L-L':k}</text>
+      <text class="shell-count" x="${x+w/2}" y="${y+h/2+12}" text-anchor="middle" style="fill:var(--ink)">${c}</text>
+      <text class="shell-sub" x="${x+w/2}" y="${y+h-10}" text-anchor="middle">根本 ${r}</text></g>`;
+  };
+  const cm = all.m || 0;
+  return `<svg viewBox="0 0 380 330" width="380" role="img" aria-label="m-SHELLモデルの要因件数">
+    <g data-shell="m"><rect x="6" y="6" width="368" height="318" rx="14" style="fill:var(--c);fill-opacity:${cm?Math.min(.06+cm*.04,.25):0};stroke:var(--c);stroke-width:2;stroke-dasharray:7 4"/>
+    <text class="shell-label" x="22" y="30" style="fill:var(--c)">m 管理</text>
+    <text class="shell-count" x="22" y="56" style="fill:var(--ink)">${cm}</text><text class="shell-sub" x="22" y="72">根本 ${rc.m||0}</text></g>
+    ${box('S',150,22,80,88)}${box('H',58,120,84,88)}${box('L',150,120,80,88)}${box('LL',238,120,84,88)}${box('E',150,218,80,88)}
+  </svg>`;
+}
+function swiss(rc){
+  const layers = [['m','組織・管理'],['S','規則・教育'],['H','車両・装備'],['E','環境'],['LL','現場の連携'],['L','当事者の行為']];
+  const X0 = 40, GAP = 92, top = 30, h = 150;
+  let g = '';
+  layers.forEach(([k,name],i) => {
+    const x = X0 + i*GAP, n = rc[k] || 0;
+    g += `<g data-shell="${k}"><path class="slice" d="M${x},${top+12} L${x+34},${top} L${x+34},${top+h} L${x},${top+h+12} Z" style="fill:var(--c);fill-opacity:.18"/>`;
+    for (let j = 0; j < Math.min(n, 4); j++){ const cy = top + 32 + j*30 + (j%2?6:0); g += `<ellipse class="hole" cx="${x+17}" cy="${cy}" rx="9" ry="11"/>`; }
+    g += `<text class="cap" x="${x+17}" y="${top+h+34}" text-anchor="middle">${name}</text><text class="cap2" x="${x+17}" y="${top+h+50}" text-anchor="middle">${i<4?'潜在的':''}${i===4?'前提条件':''}${i===5?'即発的':''}・穴 ${n}</text></g>`;
+  });
+  const endX = X0 + layers.length*GAP;
+  g += `<path class="ray" d="M8,${top+h/2} L${endX},${top+h/2}"/><path class="ray-head" d="M${endX},${top+h/2-6} L${endX+12},${top+h/2} L${endX},${top+h/2+6} Z"/>`;
+  g += `<text class="cap2" x="8" y="${top-10}">危険</text><text class="cap" x="${endX+14}" y="${top+h/2-12}" text-anchor="end">横転</text>`;
+  return `<svg viewBox="0 0 ${endX+20} ${top+h+62}" width="${endX+20}" role="img" aria-label="スイスチーズモデル">${g}</svg>`;
+}
+function renderFactors(){
+  const all = {}, rc = {}, errs = {};
+  S.whys.forEach(w => { all[w.shell] = (all[w.shell]||0)+1; if (w.err) errs[w.err] = (errs[w.err]||0)+1; });
+  const lv = leaves(); lv.forEach(w => rc[w.shell] = (rc[w.shell]||0)+1);
+  const maxErr = Math.max(1, ...Object.values(errs));
+  const stats = [
+    ['ノード', S.nodes.length], ['変動要因', S.nodes.filter(n => n.variation).length], ['排除ノード', S.nodes.filter(n => n.elim).length],
+    ['なぜ項目', S.whys.length], ['根本要因', lv.length], ['対策', S.measures.length]
+  ];
+  const blameLeaves = lv.filter(w => BLAME.test(w.text)).length;
+  const indivOnly = lv.length && lv.every(w => w.shell === 'L' || w.shell === 'LL');
+  return `
+  <div class="sec-head"><div><h2>要因整理</h2>
+    <p class="lead">なぜなぜで挙げた要因を、m-SHELLとエラーの型で集計します。スイスチーズモデルでは、根本要因を「防護の穴」として層ごとに表します。</p></div></div>
+  <div class="stats">${stats.map(([k,v]) => `<div class="stat"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('')}</div>
+  ${blameLeaves || indivOnly ? `<div class="lint" style="margin-top:12px">${blameLeaves?`根本要因のうち ${blameLeaves} 件が「注意不足」型の表現で止まっています。`:''}${indivOnly?'根本要因が当事者（L・L-L）だけに偏っています。規則・装備・管理の層にも穴がないか確認してください。':''}</div>` : ''}
+  <div class="grid2" style="margin-top:16px">
+    <section class="card"><h3>m-SHELLモデル</h3><p class="small muted" style="margin:4px 0 10px">中央の本人（L）と、周囲の要素との接点で問題が起きたと考えます。数字はなぜ項目の件数です。</p><div class="figure">${shellDiagram(all, rc)}</div></section>
+    <section class="card"><h3>エラーの型（Reason）</h3><p class="small muted" style="margin:4px 0 12px">L・L-Lの要因に付けた分類です。型によって効く対策が違います。</p>
+      <div class="bars">${Object.entries(ERR).filter(([k]) => k).map(([k,v]) => `<div class="bar"><span>${v.split('（')[0]}</span><span class="track"><span class="fillb" style="display:block;width:${(errs[k]||0)/maxErr*100}%"></span></span><span class="n">${errs[k]||0}</span></div>`).join('')}</div>
+      <ul class="small muted" style="margin:14px 0 0;padding-left:1.2em;display:flex;flex-direction:column;gap:3px">
+        <li>スリップ・ラプス：表示・配置・チェックリストなど、やり方の設計で防ぐ。</li>
+        <li>ミステイク：知識・訓練・判断基準の明確化で防ぐ。</li>
+        <li>違反：守れない規則や、守らないほうが得をする状況を変える。</li>
+      </ul></section>
+  </div>
+  <section class="card" style="margin-top:16px"><h3>スイスチーズモデル（根本要因の分布）</h3><p class="small muted" style="margin:4px 0 10px">組織・規則・装備・環境の穴（潜在的な条件）が重なったところに、当事者の行為（即発的エラー）が加わって事故に至ります。</p><div class="figure">${swiss(rc)}</div></section>
+  <section class="card" style="margin-top:16px"><h3>根本要因の一覧</h3>
+    <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th>分類</th><th>根本要因</th><th>由来のノード</th><th>対策</th></tr></thead><tbody>
+    ${lv.length ? lv.map(w => { const n = nodeById(w.nodeId), c = S.measures.filter(m => m.whyId === w.id).length;
+      return `<tr><td>${shellChip(w.shell)}</td><td>${esc(w.text)}</td><td class="small muted">${esc(n?.text||'')}</td><td>${c?`<span class="chip ok">${c} 件</span>`:'<span class="chip warn">未設定</span>'}</td></tr>`; }).join('')
+      : '<tr><td colspan="4" class="muted">まだ根本要因がありません。</td></tr>'}
+    </tbody></table></div></section>`;
+}
+
+/* ---------- 5 measures ---------- */
+function matrix(){
+  const C = 64, X0 = 46, Y0 = 10;
+  let g = '';
+  for (let e = 3; e >= 1; e--) for (let f = 1; f <= 3; f++){
+    g += `<rect class="mx-cell ${e===3&&f===3?'best':''}" x="${X0+(f-1)*C}" y="${Y0+(3-e)*C}" width="${C}" height="${C}"/>`;
+  }
+  const bucket = {};
+  S.measures.forEach(m => { const k = (+m.eff||1)+'-'+(+m.feas||1); (bucket[k] = bucket[k] || []).push(m); });
+  Object.entries(bucket).forEach(([k, ms]) => {
+    const [e, f] = k.split('-').map(Number);
+    ms.forEach((m,i) => { const cx = X0+(f-1)*C + 16 + (i%3)*16, cy = Y0+(3-e)*C + 16 + Math.floor(i/3)*16;
+      g += `<circle class="mx-dot" cx="${cx}" cy="${cy}" r="7.5"/><text class="mx-lbl" x="${cx}" y="${cy+3.5}" text-anchor="middle">${msNo(m)}</text>`; });
+  });
+  ['高','中','低'].forEach((t,i) => g += `<text class="mx-axis" x="${X0-8}" y="${Y0+i*C+C/2+4}" text-anchor="end">${t}</text>`);
+  ['低','中','高'].forEach((t,i) => g += `<text class="mx-axis" x="${X0+i*C+C/2}" y="${Y0+3*C+16}" text-anchor="middle">${t}</text>`);
+  g += `<text class="mx-axis" x="${X0+1.5*C}" y="${Y0+3*C+34}" text-anchor="middle">実現性 →</text><text class="mx-axis" x="10" y="${Y0+1.5*C}" transform="rotate(-90 10 ${Y0+1.5*C})" text-anchor="middle">効果 →</text>`;
+  return `<svg viewBox="0 0 ${X0+3*C+10} ${Y0+3*C+42}" width="${X0+3*C+10}" role="img" aria-label="対策の優先度マトリクス">${g}</svg>`;
+}
+function measureRow(m){
+  const p = prio(m), cls = p >= 6 ? 'p-hi' : p >= 4 ? 'p-md' : 'p-lo';
+  const sel = (field, opts, val) => `<select id="ms-${field}-${m.id}" data-ms="${m.id}" data-field="${field}">${opts.map(([v,l]) => `<option value="${v}" ${String(v)===String(val)?'selected':''}>${l}</option>`).join('')}</select>`;
+  const lvl3 = [[3,'高'],[2,'中'],[1,'低']];
+  return `<div class="ms">
+    <div class="ms-top"><span class="ms-no">対策 ${msNo(m)}</span><input type="text" id="ms-text-${m.id}" data-ms="${m.id}" data-field="text" value="${esc(m.text)}" placeholder="何を、どう変えるか" aria-label="対策内容"><span class="prio ${cls}" title="効果×実現性">優先 ${p}</span><button class="btn ghost sm" data-act="ms-del" data-id="${m.id}" aria-label="対策を削除">✕</button></div>
+    <div class="ms-grid">
+      <label>発想（河野）${sel('kono', KONO.map((k,i) => [i, (i+1)+' '+k]), m.kono)}</label>
+      <label>対策の階層${sel('level', LEVELS.map(l => [l.id,l.label]), m.level)}</label>
+      <label>効果${sel('eff', lvl3, m.eff)}</label>
+      <label>実現性${sel('feas', lvl3, m.feas)}</label>
+      <label>担当<input type="text" id="ms-owner-${m.id}" data-ms="${m.id}" data-field="owner" value="${esc(m.owner)}"></label>
+      <label>期限<input type="month" id="ms-due-${m.id}" data-ms="${m.id}" data-field="due" value="${esc(m.due)}"></label>
+    </div>
+    ${m.level==='att' ? '<div class="lint">注意喚起だけの対策は、時間とともに効果が薄れます。装備・規則・訓練など上位の階層の対策と組み合わせてください。</div>' : ''}
+  </div>`;
+}
+function renderMeasures(){
+  const lv = leaves();
+  const used = new Set(S.measures.map(m => +m.kono));
+  const konoCell = (k,i) => `<div class="${used.has(i)?'on':''}"><span>${i+1} ${k}</span><span class="mono">${S.measures.filter(m => +m.kono===i).length}</span></div>`;
+  return `
+  <div class="sec-head"><div><h2>再発防止対策</h2>
+    <p class="lead">根本要因ごとに対策を立てます。河野龍太郎の「エラー対策の発想手順」で幅を広げ、対策の階層で強さを確かめます。効果と実現性を掛けた値を優先度の目安にします。</p></div></div>
+  <div class="grid2" style="margin-top:16px">
+    <section class="card"><h3>優先度マトリクス</h3><p class="small muted" style="margin:4px 0 10px">右上（効果が高く、実現しやすい）から着手します。番号は対策番号です。</p><div class="figure">${matrix()}</div></section>
+    <section class="card"><h3>発想手順の使われ方</h3><p class="small muted" style="margin:4px 0 10px">1〜8は発生を防ぐ対策、9〜11は起きても被害を広げない対策です。両方がそろっているか確かめます。</p>
+      <div class="kono"><span class="g">発生防止</span>${KONO.slice(0,8).map((k,i) => konoCell(k,i)).join('')}<span class="g">拡大防止</span>${KONO.slice(8).map((k,i) => konoCell(k,i+8)).join('')}</div></section>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px">
+  ${lv.length ? lv.map(w => { const ms = S.measures.filter(m => m.whyId === w.id), n = nodeById(w.nodeId);
+    return `<section class="card cause-card">
+      <div class="cause-head">${shellChip(w.shell, true)}<span class="cause-text">${esc(w.text || '（未入力）')}</span>${ms.length?'':'<span class="chip warn">対策未設定</span>'}</div>
+      <div class="small muted">由来：${esc(n?.text||'')}</div>
+      ${ms.map(measureRow).join('')}
+      <div><button class="btn sm" data-act="ms-add" data-id="${w.id}">＋ 対策を追加</button></div>
+    </section>`; }).join('')
+    : '<div class="card muted">なぜなぜ分析で根本要因が出ると、ここに並びます。</div>'}
+  </div>`;
+}
+
+/* ---------- 6 report ---------- */
+function reportText(){
+  const m = S.meta, out = [];
+  const line = (k,v) => v && out.push(`${k}：${v}`);
+  out.push(`■ ${m.title || '（事案名未入力）'}`, '');
+  out.push('1 事案の概要');
+  line('発生日時', m.date ? m.date.replace('T',' ') : ''); line('発生場所', m.place); line('車両', m.vehicle); line('乗車人員', m.crew);
+  line('天候・路面', [m.weather, m.road].filter(Boolean).join('／')); line('概要', m.summary); line('被害', m.damage);
+  out.push('', '2 事故に至る経過（VTA）');
+  [...S.nodes].sort((a,b) => a.seq - b.seq).forEach(n => {
+    const tag = [n.variation?'変動要因':'', n.elim?'排除ノード':''].filter(Boolean).join('・');
+    out.push(`  #${n.seq}${n.time?' '+n.time:''}［${laneName(n.lane)}］${n.text}${tag?'　◀'+tag:''}`);
+  });
+  out.push('', '3 背後要因の分析（なぜなぜ分析）');
+  targets().forEach(n => {
+    const roots = S.whys.filter(w => w.nodeId === n.id && !w.parentId); if (!roots.length) return;
+    out.push(`  ◆ ${n.text}`);
+    const walk = (w, d) => { out.push(`${'    '.repeat(d)}なぜ${d}：${w.text}〔${SHELL[w.shell].label}${w.err?'／'+ERR[w.err].split('（')[0]:''}〕`); childrenOf(w.id).forEach(c => walk(c, d+1)); };
+    roots.forEach(r => walk(r, 1));
+  });
+  const lv = leaves();
+  out.push('', '4 要因の分類（m-SHELL）');
+  Object.entries(SHELL).forEach(([k,v]) => { const a = S.whys.filter(w => w.shell===k).length, r = lv.filter(w => w.shell===k).length; if (a) out.push(`  ${v.name}：${a}件（うち根本要因 ${r}件）`); });
+  out.push('', '5 再発防止対策');
+  [...S.measures].sort((a,b) => prio(b) - prio(a)).forEach(x => {
+    const w = S.whys.find(y => y.id === x.whyId);
+    out.push(`  対策${msNo(x)}　${x.text}`);
+    out.push(`    対象要因：${w?.text||''}`);
+    out.push(`    発想：${KONO[+x.kono]}　階層：${LEVELS.find(l => l.id===x.level)?.label||''}　優先度：${prio(x)}（効果${x.eff}×実現性${x.feas}）${x.owner?'　担当：'+x.owner:''}${x.due?'　期限：'+x.due:''}`);
+  });
+  const none = lv.filter(w => !S.measures.some(x => x.whyId === w.id));
+  if (none.length){ out.push('', '  ※対策未設定の根本要因'); none.forEach(w => out.push(`    ・${w.text}`)); }
+  return out.join('\n');
+}
+function renderReport(){
+  return `
+  <div class="sec-head"><div><h2>報告書テキスト</h2>
+    <p class="lead">ここまでの入力から、報告書の下書きを組み立てます。コピーして庁内の様式に貼り付けてください。</p></div>
+    <button class="btn primary" data-act="copy-report">コピー</button></div>
+  <textarea id="report-text" class="report card" readonly style="margin-top:16px">${esc(reportText())}</textarea>`;
+}
+
+/* ---------- guide ---------- */
+function renderGuide(){
+  return `
+  <div class="sec-head"><div><h2>理論ガイド</h2><p class="lead">このツールの各工程が拠りどころにしている考え方です。分析会議の前に、参加者で共通理解をつくるのに使えます。</p></div></div>
+  <div class="guide-grid">
+    <article class="card"><h3>VTA（Variation Tree Analysis）</h3>
+      <p>事故に至る経過を、関係者・要素ごとに時系列で並べた樹形図です。通常の作業から外れた「変動」が連鎖して事故に至ったと考え、その連鎖をどこで断てたかを探します。</p>
+      <ol><li>行為者・要素を横に並べる（機関員、指揮者、車両、環境、組織など）</li><li>行為・判断・状態を時間順に置き、因果を矢印でつなぐ</li><li>通常と違った点を変動要因とし、太枠で示す</li><li>連鎖を断てば事故に至らなかった点を排除ノードとし、✕で示す</li><li>排除ノードごとに背後要因を分析する</li></ol>
+      <p class="src">Leplat & Rasmussen (1984)。国内では石橋明らが航空・鉄道分野で普及。</p></article>
+    <article class="card"><h3>なぜなぜ分析の約束ごと</h3>
+      <ul><li>事実から出発し、推測には推測と書く</li><li>「注意不足」「確認不足」で止めない。なぜ注意が向かなかったのかを問う</li><li>個人の資質で終わらせず、規則・教育・装備・体制まで掘り下げる</li><li>要因が複数あれば枝分かれさせる</li><li>根本要因から「だから」で逆に読み、論理がつながるか確かめる</li><li>対策が打てる単位まで来たら止める</li></ul></article>
+    <article class="card"><h3>m-SHELLモデル</h3>
+      <p>中央の人間（L）と、それを取り巻く要素との接点で不具合が起きると考えるモデルです。</p>
+      <ul>${Object.entries(SHELL).map(([k,v]) => `<li><b>${v.name}</b>：${v.desc}</li>`).join('')}</ul>
+      <p class="src">Edwards (1972) のSHEL、Hawkins (1975) のSHELLに、河野龍太郎が管理（m）を加えたもの。</p></article>
+    <article class="card"><h3>エラーの型（Reason）とSRKモデル</h3>
+      <ul>${Object.entries(ERR).filter(([k]) => k).map(([,v]) => `<li>${v}</li>`).join('')}</ul>
+      <p>Rasmussenは行動を、慣れた操作を無意識に行う<b>技能ベース</b>、手順や経験則に当てはめる<b>規則ベース</b>、初めての状況で考えて判断する<b>知識ベース</b>の3段階に分けました。スリップ・ラプスは技能ベース、ミステイクは規則・知識ベースで起きやすくなります。乗り慣れた旧型車の感覚で新型車を運転する場面は、規則ベースの当てはめ違いの典型です。</p>
+      <p class="src">Reason, Human Error (1990)／Rasmussen (1983)</p></article>
+    <article class="card"><h3>スイスチーズモデル</h3>
+      <p>組織・規則・装備などの防護層にはそれぞれ穴（弱点）があり、穴が一直線に並んだときに事故が起きます。現場の当事者の行為は<b>即発的エラー</b>、組織や規則に潜む弱点は<b>潜在的条件</b>と呼ばれ、再発防止では潜在的条件の穴をふさぐことが重視されます。</p>
+      <p class="src">Reason, Managing the Risks of Organizational Accidents (1997)</p></article>
+    <article class="card"><h3>エラー対策の発想手順（河野）</h3>
+      <ol>${KONO.map(k => `<li>${k}</li>`).join('')}</ol>
+      <p>1〜8が発生防止、9〜11が拡大防止です。対策の階層は、強い順に「除去・代替 → 工学的対策 → 管理的対策 → 教育・訓練 → 注意喚起」。注意喚起だけの対策は効果が長続きしません。</p>
+      <p class="src">河野龍太郎『医療におけるヒューマンエラー』ほか</p></article>
+  </div>`;
+}
+
+/* ---------- actions ---------- */
+function setTab(id){ ui.tab = id; try { localStorage.setItem(KEY+':tab', id); } catch(_){} render(); window.scrollTo({top:0}); }
+function askConfirm(title, msg, fn){
+  $('#confirm-title').textContent = title; $('#confirm-msg').textContent = msg; ui.confirm = fn;
+  const d = $('#dlg-confirm'); d.showModal ? d.showModal() : d.setAttribute('open','');
+}
+function closeDialogs(){ document.querySelectorAll('dialog').forEach(d => d.close ? d.close() : d.removeAttribute('open')); }
+function removeWhy(id){
+  const ids = new Set([id]); let grew = true;
+  while (grew){ grew = false; S.whys.forEach(w => { if (w.parentId && ids.has(w.parentId) && !ids.has(w.id)){ ids.add(w.id); grew = true; } }); }
+  S.whys = S.whys.filter(w => !ids.has(w.id)); S.measures = S.measures.filter(m => !ids.has(m.whyId));
+}
+function copyText(text, el){
+  const done = () => toast('コピーしました');
+  try { navigator.clipboard.writeText(text).then(done, () => { el?.select(); toast('選択しました。Ctrl+C（⌘C）でコピーしてください'); }); }
+  catch(_){ el?.select(); toast('選択しました。Ctrl+C（⌘C）でコピーしてください'); }
+}
+function loadData(d){
+  if (!valid(d)){ toast('分析データの形式ではありません。このツールで書き出したJSONを使ってください'); return false; }
+  S = d; ui.sel = null; ui.target = null; save(); render(); return true;
+}
+
+document.addEventListener('click', e => {
+  const a = e.target.closest('[data-act]'); if (!a) return;
+  const id = a.dataset.id;
+  switch (a.dataset.act){
+    case 'tab': setTab(id); break;
+    case 'sel-node': ui.sel = id; render(); break;
+    case 'new-node': ui.sel = null; render(); $('#f-text')?.focus(); break;
+    case 'save-node': {
+      const text = $('#f-text').value.trim();
+      if (!text){ toast('内容を入力してください'); $('#f-text').focus(); return; }
+      let n = nodeById(ui.sel);
+      if (!n){ n = {id:uid('n')}; S.nodes.push(n); }
+      Object.assign(n, {lane:$('#f-lane').value, seq:+$('#f-seq').value || 0, time:$('#f-time').value.trim(), kind:$('#f-kind').value, text, variation:$('#f-var').checked, elim:$('#f-elim').checked, note:$('#f-note').value});
+      const preds = [...document.querySelectorAll('.f-pred:checked')].map(x => x.value);
+      S.edges = S.edges.filter(x => x.to !== n.id).concat(preds.map(p => ({from:p, to:n.id})));
+      ui.lastLane = n.lane;
+      const wasNew = ui.sel !== n.id; ui.sel = wasNew ? null : n.id;
+      save(); render(); toast(wasNew ? 'ノードを追加しました' : 'ノードを更新しました');
+      break; }
+    case 'del-node': {
+      const n = nodeById(ui.sel); if (!n) return;
+      const wc = S.whys.filter(w => w.nodeId === n.id).length;
+      askConfirm('ノードを削除', `「${n.text}」を削除します。${wc?`このノードのなぜなぜ ${wc} 件と、その対策も削除されます。`:''}`, () => {
+        S.whys.filter(w => w.nodeId === n.id && !w.parentId).forEach(w => removeWhy(w.id));
+        S.nodes = S.nodes.filter(x => x.id !== n.id); S.edges = S.edges.filter(x => x.from !== n.id && x.to !== n.id);
+        ui.sel = null; save(); render(); toast('ノードを削除しました');
+      }); break; }
+    case 'goto-why': ui.target = id; setTab('why'); break;
+    case 'lane-add': S.lanes.push({id:uid('l'), name:'新しいレーン'}); save(); render(); break;
+    case 'lane-move': { const i = S.lanes.findIndex(l => l.id === id), j = i + (+a.dataset.dir); if (j < 0 || j >= S.lanes.length) return; [S.lanes[i], S.lanes[j]] = [S.lanes[j], S.lanes[i]]; save(); render(); break; }
+    case 'lane-del': if (S.nodes.some(n => n.lane === id)){ toast('このレーンにはノードがあります。先にノードを移すか削除してください'); return; } S.lanes = S.lanes.filter(l => l.id !== id); save(); render(); break;
+    case 'sel-target': ui.target = id; render(); break;
+    case 'why-root': { const w = {id:uid('w'), nodeId:ui.target, parentId:null, text:'', shell:'L', err:''}; S.whys.push(w); save(); render(); $('#wt-'+w.id)?.focus(); break; }
+    case 'why-child': case 'why-sib': {
+      const p = S.whys.find(w => w.id === id); if (!p) return;
+      const w = {id:uid('w'), nodeId:p.nodeId, parentId: a.dataset.act==='why-child' ? p.id : p.parentId, text:'', shell: a.dataset.act==='why-child' ? 'S' : p.shell, err:''};
+      S.whys.push(w); save(); render(); $('#wt-'+w.id)?.focus(); break; }
+    case 'why-del': {
+      const w = S.whys.find(x => x.id === id); if (!w) return;
+      const kids = childrenOf(id).length;
+      if (!kids && !w.text){ removeWhy(id); save(); render(); return; }
+      askConfirm('要因を削除', `「${w.text || '（未入力）'}」${kids?'と、その下の要因':''}を削除します。関連する対策も削除されます。`, () => { removeWhy(id); save(); render(); });
+      break; }
+    case 'ms-add': { const m = {id:uid('m'), whyId:id, text:'', kono:0, level:'adm', eff:2, feas:2, owner:'', due:''}; S.measures.push(m); save(); render(); $('#ms-text-'+m.id)?.focus(); break; }
+    case 'ms-del': S.measures = S.measures.filter(m => m.id !== id); save(); render(); break;
+    case 'copy-report': copyText($('#report-text').value, $('#report-text')); break;
+    case 'open-data': { $('#json-out').value = JSON.stringify(S, null, 2); $('#json-in').value = ''; $('#json-file').value = ''; const d = $('#dlg-data'); d.showModal ? d.showModal() : d.setAttribute('open',''); break; }
+    case 'copy-json': copyText($('#json-out').value, $('#json-out')); break;
+    case 'download-json': {
+      try {
+        const url = URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], {type:'application/json'}));
+        const link = document.createElement('a'); link.href = url; link.download = (S.meta.title || 'vta-analysis').replace(/[\\/:*?"<>|]/g,'_') + '.json';
+        document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+        toast('保存を開始しました。保存されない環境では「コピー」を使ってください');
+      } catch(_){ toast('この環境ではファイル保存ができません。「コピー」を使ってください'); }
+      break; }
+    case 'import-json': {
+      const f = $('#json-file').files[0];
+      const go = txt => { try { if (loadData(JSON.parse(txt))){ closeDialogs(); toast('読み込みました'); } } catch(_){ toast('JSONとして読み取れません。貼り付けた内容を確認してください'); } };
+      if (f){ const r = new FileReader(); r.onload = () => go(r.result); r.readAsText(f); }
+      else if ($('#json-in').value.trim()) go($('#json-in').value);
+      else toast('JSONを貼り付けるか、ファイルを選んでください');
+      break; }
+    case 'ask-new': askConfirm('新しい分析を始める', '現在の内容を消して白紙から始めます。残したい場合は、先に「データの保存・読込」から書き出してください。', () => { S = blank(); ui.sel = null; ui.target = null; save(); setTab('overview'); toast('新しい分析を始めました'); }); break;
+    case 'confirm-yes': { const fn = ui.confirm; ui.confirm = null; closeDialogs(); fn && fn(); break; }
+    case 'close-dlg': closeDialogs(); break;
+  }
+});
+document.addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('g.node')){ e.preventDefault(); ui.sel = e.target.dataset.id; render(); }
+});
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.dataset.meta){ S.meta[t.dataset.meta] = t.value; save(); if (t.dataset.meta === 'title') $('#case-title').textContent = t.value || '事案名が未入力です'; return; }
+  if (t.dataset.why){ const w = S.whys.find(x => x.id === t.dataset.why); if (!w) return; w[t.dataset.field] = t.value; save();
+    if (t.dataset.field === 'text'){ const l = t.parentElement.querySelector('.lint'); if (l) l.hidden = !BLAME.test(t.value); } return; }
+  if (t.dataset.ms){ const m = S.measures.find(x => x.id === t.dataset.ms); if (!m) return; const f = t.dataset.field; m[f] = (f==='eff'||f==='feas'||f==='kono') ? +t.value : t.value; save(); return; }
+  if (t.dataset.lane){ const l = S.lanes.find(x => x.id === t.dataset.lane); if (l){ l.name = t.value; save(); } }
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.tagName === 'SELECT' && (t.dataset.why || t.dataset.ms)) render();
+  if (t.dataset.lane) render();
+});
+
+render();
+$('#save-state').textContent = S.isSample ? 'サンプルを表示中（編集すると自動保存）' : 'このブラウザに自動保存済み';
+</script>
