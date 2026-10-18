@@ -9,6 +9,17 @@
 - なぜなぜでは、6つの観点ごとの質問と、エラーの種類を見分ける手順を出す
 - 対策では、要因の観点とエラーの種類から対策の候補を出す
 - 記入例：車両の横転事故、メールの誤送信
+- 操作：図の空いたマスをクリックして追加、四角をドラッグで移動、●をドラッグして矢印、矢印クリックでブレイク、元に戻す／やり直す（Ctrl+Z / Ctrl+Shift+Z）
+
+## 拠りどころ
+
+| 機能 | 資料 |
+|---|---|
+| VTA・SRK | Leplat & Rasmussen (1984) Accident Analysis & Prevention 16(2); JAXA JERG-0-018A |
+| なぜなぜの書き方 | 小倉仁志『なぜなぜ分析10則』; 米国VA NCPS「Five Rules of Causation」 |
+| 対策の強さ | NPSF/IHI「RCA²」Action Hierarchy (2015) |
+| エラー・違反の種類 | 英国HSE HSG48; Reason (1990) |
+| 調査の進め方 | 英国HSE HSG245 |
 
 ## 工程
 

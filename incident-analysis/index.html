@@ -32,6 +32,7 @@
   color-scheme:dark}
 
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.65}
 .wrap{max-width:1320px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 48px}
 h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.3}
@@ -131,6 +132,19 @@ svg .n-kind{fill:var(--muted);font-size:10.5px;font-weight:700}
 svg .node.var .n-kind{fill:var(--var)}
 svg .n-elim{fill:var(--accent);font-size:10.5px;font-weight:700}
 svg .n-text{fill:var(--ink);font-size:12.5px}
+svg .cell{fill:transparent;cursor:copy}
+svg .cell-g:hover .cell,svg .cell.drop{fill:var(--accent-soft)}
+svg .cell-plus{fill:var(--accent);font-size:12px;font-weight:700;opacity:0;pointer-events:none}
+svg .cell-g:hover .cell-plus{opacity:1}
+svg .node{touch-action:none}
+svg .node.dragging{opacity:.75;cursor:grabbing}
+svg .node.drop .n-box{stroke:var(--accent);stroke-width:3}
+svg .n-handle{fill:var(--accent);stroke:var(--surface);stroke-width:2;cursor:crosshair;opacity:0;touch-action:none}
+svg .node:hover .n-handle,svg .node.sel .n-handle,svg .node:focus-visible .n-handle{opacity:1}
+@media (hover:none){svg .n-handle{opacity:.85}}
+svg .temp-link{stroke:var(--accent);stroke-width:2;stroke-dasharray:4 3;pointer-events:none}
+.stepnav{display:flex;justify-content:space-between;gap:8px;margin-top:24px;padding-top:16px;border-top:1px solid var(--line)}
+.top-actions .btn:disabled{opacity:.45;cursor:default}
 svg .edge-hit{fill:none;stroke:transparent;stroke-width:14;cursor:pointer}
 svg .edge-g:hover .edge{stroke:var(--ink);stroke-width:2}
 svg .brk-line{stroke:var(--accent);stroke-width:3;stroke-dasharray:7 4}
@@ -206,7 +220,7 @@ th{font-size:12px;color:var(--muted);font-weight:700;white-space:nowrap}
 .cause-head{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
 .cause-text{font-weight:700;font-size:15px;flex:1 1 280px;min-width:0}
 .ms{border:1px solid var(--line);border-radius:var(--r);padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--sunk)}
-.ms-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.ms-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
 @media (max-width:760px){.ms-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .ms-top{display:flex;gap:8px;align-items:center}
 .ms-no{font-family:var(--f-mono);font-size:12px;color:var(--muted);white-space:nowrap}
@@ -278,6 +292,8 @@ dialog textarea{font-family:var(--f-mono);font-size:12px}
     </div>
     <div class="top-actions">
       <span class="save" id="save-state" role="status"></span>
+      <button class="btn" id="btn-undo" data-act="undo" disabled title="元に戻す（Ctrl+Z）">↶ 元に戻す</button>
+      <button class="btn" id="btn-redo" data-act="redo" disabled title="やり直す（Ctrl+Shift+Z）">↷ やり直す</button>
       <button class="btn" data-act="open-data">データの保存・読込</button>
       <button class="btn primary" data-act="open-new">新しい分析</button>
     </div>
@@ -343,9 +359,14 @@ const ERR = {
   lapse:     'やるべきことが抜けた・忘れた（ラプス）',
   mistakeR:  'ルールや経験の当てはめを誤った（規則ベースのミステイク）',
   mistakeK:  '知識・経験がなく判断を誤った（知識ベースのミステイク）',
-  violation: 'わかっていて決まりから外れた（違反）'
+  violation: '決まりから外れた（違反・種類は未特定）',
+  vRoutine:  'ふだんから決まりを外すのが当たり前だった（日常的違反）',
+  vSituational:'その場の状況で、決まりを守るのが難しかった（状況的違反）',
+  vExceptional:'想定外の事態で、やむを得ず決まりを外した（例外的違反）'
 };
-const ERR_SHORT = {slip:'スリップ', lapse:'ラプス', mistakeR:'ミステイク（規則）', mistakeK:'ミステイク（知識）', violation:'違反'};
+const ERR_SHORT = {slip:'スリップ', lapse:'ラプス', mistakeR:'ミステイク（規則）', mistakeK:'ミステイク（知識）', violation:'違反（未特定）', vRoutine:'違反（日常的）', vSituational:'違反（状況的）', vExceptional:'違反（例外的）'};
+/* Rasmussen の SRK。VTA の行為・判断ノードに付ける */
+const SRK = {'':'未選択（状態・事故事象では不要）', skill:'慣れで自然に体が動いた（技能ベース）', rule:'手順や経験に当てはめた（規則ベース）', knowledge:'その場で考えて判断した（知識ベース）'};
 const TEMPLATES = {
   vehicle:  {label:'車両・運転の事故',          sub:'交通事故、横転、接触、物損など', lanes:['運転者','同乗者・指揮者','車両','道路・環境','組織・運用'], ex:'例：交差点に時速30kmで進入した'},
   activity: {label:'現場活動・作業中の事故',    sub:'活動中の受傷、転落、資機材の取り扱い', lanes:['当事者','指揮者・リーダー','他の隊員・作業者','資機材','現場環境','組織・運用'], ex:'例：濡れた足場で梯子を登り始めた'},
@@ -356,27 +377,42 @@ const TEMPLATES = {
 };
 /* 根本要因の分類（とエラーの型）から出す対策の候補。kono は KONO の添字 */
 const SUGGEST = {
-  slip:     [['まぎらわしい操作・表示をなくす（配置・色・形を変える）',2,'eng'],['指差呼称や声出し確認を手順に組み込む',8,'edu']],
-  lapse:    [['チェックリストや手順カードを使う',8,'adm'],['抜けると先に進めない仕組みにする',1,'eng']],
-  mistakeR: [['判断の目安（数値・基準）を明文化する',5,'adm'],['いつもと違う条件を体験する訓練を行う',7,'edu']],
-  mistakeK: [['必要な知識を教育・訓練に加える',7,'edu'],['迷ったときに相談・確認できる手順をつくる',9,'adm']],
-  violation:[['守りやすい手順に見直す（手間・時間の負担を減らす）',3,'adm'],['守らないほうが早い・得という状況をなくす',6,'adm']],
-  L:  [['体調・疲労を申告し、交代できる仕組みをつくる',6,'adm']],
-  LL: [['役割分担と声かけのルールを決める',9,'adm'],['立場に関係なく安全上の指摘ができる合図・手順を決める',9,'adm']],
-  S:  [['手順書・ルールを現場で守れる内容に改訂する',3,'adm'],['教育・訓練の内容に加える',7,'edu']],
-  H:  [['装備・設備の設計や配置を改善する',3,'eng'],['危険を知らせる表示・警報装置を付ける',4,'eng'],['その作業や機材の使用をやめる・置き換える',0,'elim']],
-  E:  [['危険な場所・条件を事前に共有する（地図・掲示）',5,'adm'],['環境そのものを改善する（照明・路面・配置）',3,'eng']],
-  m:  [['責任部署と基準を決める',6,'adm'],['人員・時間の配分を見直す',6,'adm'],['同種事例を共有する仕組みをつくる',5,'adm']],
-  all:[['起きても被害を小さくする備え（保護具・緊急対応）を整える',10,'eng']]
+  slip:     [['まぎらわしい操作・表示をなくす（配置・色・形を変える）',2,'system'],['指差呼称や声出し確認を手順に組み込む',8,'comm']],
+  lapse:    [['チェックリストや手順カードを使う',8,'checklist'],['抜けると先に進めない仕組みにする',1,'force']],
+  mistakeR: [['判断の目安（数値・基準）を標準化する',5,'standard'],['いつもと違う条件を体験する訓練を行う',7,'sim']],
+  mistakeK: [['必要な知識を教育・訓練に加える',7,'edu'],['迷ったときに相談・確認できる伝え方を決める',9,'comm']],
+  violation:[['守りやすい手順に見直す（手間・時間の負担を減らす）',3,'simplify'],['守らないほうが早い・得という状況をなくす',6,'staff']],
+  L:  [['体調・疲労を申告し、交代できる仕組みをつくる',6,'staff']],
+  LL: [['役割分担と声かけのルールを決める',9,'comm'],['立場に関係なく安全上の指摘ができる合図・手順を決める',9,'comm']],
+  S:  [['手順書・ルールを現場で守れる単純な内容にする',3,'simplify'],['教育・訓練の内容に加える',7,'edu']],
+  H:  [['装備・設備の設計や配置を変える',3,'remove'],['危険を知らせる表示・警報装置を付ける',4,'warn'],['その作業や機材の使用をやめる・置き換える',0,'remove']],
+  E:  [['危険な場所・条件を事前に共有する（地図・掲示）',5,'comm'],['環境そのものを改善する（照明・路面・配置）',3,'remove']],
+  m:  [['幹部が責任部署と基準を決めて進捗を見る',6,'leader'],['人員・時間の配分を見直す',6,'staff'],['同種事例を共有する仕組みをつくる',5,'comm']],
+  all:[['起きても被害を小さくする備え（保護具・緊急対応）を整える',10,'system']]
 };
 const KONO = ['やめる（なくす）','できないようにする','わかりやすくする','やりやすくする','知覚能力を持たせる','認知・予測させる','安全を優先させる','できる能力を持たせる','自分で気づかせる','検出する','備える'];
+/* 対策の強さ：VA/IHI の RCA² Action Hierarchy（強・中・弱）に準拠 */
 const LEVELS = [
-  {id:'elim', label:'除去・代替'},
-  {id:'eng',  label:'工学的対策（装備・設計）'},
-  {id:'adm',  label:'管理的対策（規則・体制）'},
-  {id:'edu',  label:'教育・訓練'},
-  {id:'att',  label:'注意喚起のみ'}
+  {id:'remove',    s:3, label:'危険をなくす・物理的に変える（構造・配置）'},
+  {id:'force',     s:3, label:'間違えられない仕組みにする（フールプルーフ）'},
+  {id:'simplify',  s:3, label:'手順を単純にする・作業をやめる'},
+  {id:'standard',  s:3, label:'機材・手順を標準化する'},
+  {id:'leader',    s:3, label:'幹部が直接関与して改善する'},
+  {id:'staff',     s:2, label:'人員を増やす・負担や時間の圧力を減らす'},
+  {id:'checklist', s:2, label:'チェックリスト・手順カードを使う'},
+  {id:'system',    s:2, label:'装置・システム・表示を改良する'},
+  {id:'distract',  s:2, label:'気が散る要因をなくす'},
+  {id:'comm',      s:2, label:'伝え方を標準化する（復唱・指差呼称など）'},
+  {id:'sim',       s:2, label:'実践的な訓練（シミュレーション）'},
+  {id:'double',    s:1, label:'ダブルチェック'},
+  {id:'warn',      s:1, label:'警告・注意表示'},
+  {id:'policy',    s:1, label:'規則・手順書の新設・改訂'},
+  {id:'edu',       s:1, label:'教育・研修'},
+  {id:'att',       s:1, label:'注意喚起'}
 ];
+const STRENGTH = {3:'強', 2:'中', 1:'弱'};
+const LEGACY_LEVEL = {elim:'remove', eng:'system', adm:'policy'};
+const levelOf = id => LEVELS.find(l => l.id === (LEGACY_LEVEL[id] || id)) || LEVELS[LEVELS.length-1];
 const KINDS = {act:'行為', judge:'判断', state:'状態', event:'事故事象'};
 const BLAME = /注意不足|不注意|確認不足|気を?付け|意識が低|意識不足|怠|うっかり|油断|慢心|たるみ|自覚が|認識不足|ミスした|徹底/;
 const TABS = [
@@ -439,11 +475,11 @@ function sample(){
       {id:'w14',nodeId:'n1',parentId:null,text:'訓練担当者の確認不足',shell:'L',err:'lapse'}
     ],
     measures:[
-      {id:'m1',whyId:'w4', text:'車両更新時の慣熟訓練基準を策定し、満水時のカーブ・制動・回避操作を必須項目にする',kono:7,level:'adm',eff:3,feas:3,owner:'警防課',due:'2026-12'},
-      {id:'m2',whyId:'w4', text:'次期更新車両の仕様に横滑り防止装置と横転警報装置を加える',kono:1,level:'eng',eff:3,feas:2,owner:'車両担当',due:'2027-04'},
-      {id:'m3',whyId:'w6', text:'管内の危険カーブ地点を地図化し、車載端末で接近時に表示する',kono:5,level:'eng',eff:2,feas:2,owner:'警防課',due:'2027-03'},
-      {id:'m4',whyId:'w8', text:'緊急走行時のカーブ進入速度の目安を運用要領に明記する',kono:6,level:'adm',eff:2,feas:3,owner:'警防課',due:'2026-12'},
-      {id:'m5',whyId:'w11',text:'出場途上の役割（ナビ担当・速度コール）を定め、乗車訓練で反復する',kono:9,level:'edu',eff:2,feas:3,owner:'各署',due:'2027-01'},
+      {id:'m1',whyId:'w4', text:'車両更新時の慣熟訓練基準を策定し、満水時のカーブ・制動・回避操作を必須項目にする',kono:7,level:'policy',eff:3,feas:3,owner:'警防課',due:'2026-12'},
+      {id:'m2',whyId:'w4', text:'次期更新車両の仕様に横滑り防止装置と横転警報装置を加える',kono:1,level:'force',eff:3,feas:2,owner:'車両担当',due:'2027-04'},
+      {id:'m3',whyId:'w6', text:'管内の危険カーブ地点を地図化し、車載端末で接近時に表示する',kono:5,level:'system',eff:2,feas:2,owner:'警防課',due:'2027-03'},
+      {id:'m4',whyId:'w8', text:'緊急走行時のカーブ進入速度の目安を運用要領に明記する',kono:6,level:'policy',eff:2,feas:3,owner:'警防課',due:'2026-12'},
+      {id:'m5',whyId:'w11',text:'出場途上の役割（ナビ担当・速度コール）を定め、乗車訓練で反復する',kono:9,level:'comm',eff:2,feas:3,owner:'各署',due:'2027-01'},
       {id:'m6',whyId:'w14',text:'訓練担当者へ注意喚起する',kono:6,level:'att',eff:1,feas:3,owner:'訓練係',due:'2026-11'}
     ]
   };
@@ -475,9 +511,9 @@ function sampleOffice(){
       {id:'b6',nodeId:'a6',parentId:'b5',text:'送信前の確認を誰がどうするか、課として決めていない',shell:'m',err:''}
     ],
     measures:[
-      {id:'c1',whyId:'b2',text:'外部宛てメールの自動補完を無効にし、送信前に宛先の確認画面を出す',kono:1,level:'eng',eff:3,feas:3,owner:'情報システム担当',due:'2026-09'},
-      {id:'c2',whyId:'b6',text:'個人情報を含む送信は、宛先と添付を2人で確認する手順を定める',kono:9,level:'adm',eff:2,feas:3,owner:'課長',due:'2026-08'},
-      {id:'c3',whyId:'b4',text:'通知期限を「翌開庁日まで」に改め、終業前の集中をなくす',kono:3,level:'adm',eff:2,feas:2,owner:'課長',due:'2026-10'}
+      {id:'c1',whyId:'b2',text:'外部宛てメールの自動補完を無効にし、送信前に宛先の確認画面を出す',kono:1,level:'force',eff:3,feas:3,owner:'情報システム担当',due:'2026-09'},
+      {id:'c2',whyId:'b6',text:'個人情報を含む送信は、宛先と添付を2人で確認する手順を定める',kono:9,level:'double',eff:2,feas:3,owner:'課長',due:'2026-08'},
+      {id:'c3',whyId:'b4',text:'通知期限を「翌開庁日まで」に改め、終業前の集中をなくす',kono:3,level:'staff',eff:2,feas:2,owner:'課長',due:'2026-10'}
     ]
   };
 }
@@ -509,16 +545,29 @@ try { const t = localStorage.getItem(KEY+':tab'); if (TABS.some(x=>x.id===t)) ui
 
 function valid(d){ return d && typeof d==='object' && d.meta && Array.isArray(d.lanes) && Array.isArray(d.nodes) && Array.isArray(d.edges) && Array.isArray(d.whys) && Array.isArray(d.measures); }
 
-let saveTimer = null;
-function save(){
-  $('#save-state').textContent = '保存中…';
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    let ok = true;
-    try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(_){ ok = false; }
-    $('#save-state').textContent = ok ? 'このブラウザに自動保存済み' : '自動保存できません。「データの保存・読込」から書き出してください';
-  }, 300);
+/* 保存と、元に戻す／やり直す。変更が落ち着いた時点（300ms）を1手として記録する */
+let saveTimer = null, past = [], future = [], snap = null;
+function persist(cur){
+  let ok = true;
+  try { localStorage.setItem(KEY, cur); } catch(_){ ok = false; }
+  $('#save-state').textContent = ok ? 'このブラウザに自動保存済み' : '自動保存できません。「データの保存・読込」から書き出してください';
+  $('#btn-undo').disabled = !past.length; $('#btn-redo').disabled = !future.length;
 }
+function commit(){
+  clearTimeout(saveTimer); saveTimer = null;
+  const cur = JSON.stringify(S);
+  if (snap !== null && cur !== snap){ past.push(snap); if (past.length > 100) past.shift(); future = []; }
+  snap = cur; persist(cur);
+}
+function save(){ $('#save-state').textContent = '保存中…'; clearTimeout(saveTimer); saveTimer = setTimeout(commit, 300); }
+function travel(from, to, msg){
+  if (saveTimer) commit();
+  if (!from.length) return;
+  to.push(snap); snap = from.pop(); S = JSON.parse(snap);
+  ui.sel = null; ui.draft = null; ui.linkFrom = null; persist(snap); render(); toast(msg);
+}
+const undo = () => travel(past, future, '元に戻しました');
+const redo = () => travel(future, past, 'やり直しました');
 function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
   clearTimeout(toast.tm); toast.tm = setTimeout(() => t.hidden = true, 2600);
@@ -543,11 +592,14 @@ const targets = () => [...S.nodes.filter(n => n.variation || n.elim), ...S.edges
   .sort((a,b) => (tRank(a) - tRank(b)) || (a.seq - b.seq));
 const ABSTRACT = /不十分|不適切|不備|悪かった|悪い|甘かった|甘い|欠如|問題があった|ずさん|不徹底/;
 const PSYCH = /思った|思い込|うっかり|勘違い|忘れ|気づかなかった|気付かなかった|慌て|焦っ|焦り|油断|慢心/;
-function whyLint(text, isLeaf){
+function whyLint(text, isLeaf, err){
   const m = [];
   if (BLAME.test(text)) m.push(blameMsg());
   else if (ABSTRACT.test(text)) m.push('「不十分」「不適切」などの抽象的な言葉は、誰が読んでも同じ意味になるよう、何がどうだったのかを具体的に書き換えます（例：「訓練が不十分」→「訓練にカーブ走行の項目がない」）。');
   if (isLeaf && PSYCH.test(text)) m.push('「思い込んだ」「焦った」などの心の動きで止めると、対策が「気をつける」になります。何がそう思わせたのか（表示・手順・状況）を、さらに掘り下げます。');
+  if (isLeaf && err && err.startsWith('v')) m.push('決まりから外れた行動にも、必ずその前の原因があります（守りにくい手順、時間の圧力、ふだんからの慣行など）。ここで止めずに「なぜ」を続けます。');
+  else if (isLeaf && err) m.push('ヒューマンエラーには、必ずその前の原因があります。ここで止めずに「なぜ」を続けます。');
+  if (/しなかった|せずに|行わなかった|しないまま|していなかった/.test(text)) m.push('「〜しなかった」を要因にできるのは、そうする決まりや役割があった場合だけです。決まりがなかったなら「決まり・役割がない」こと自体を要因として書きます。');
   if (/。\s*\S/.test(text) || /また、|さらに、/.test(text)) m.push('1つの欄に要因が2つ以上入っていませんか。分けられるなら「並列の要因」で別の欄にします（1つの欄に1つの事柄）。');
   return m;
 }
@@ -560,7 +612,7 @@ function shellChip(k, fill){ return k ? `<span class="chip ${fill?'fill':''}" da
 /* ---------- shell ---------- */
 const HOWTO = {
   overview:['起きたことを、事実だけで書きます。「〜すべきだった」などの評価は書きません。','誰の責任かではなく、なぜ起きたかを明らかにするのが目的です。'],
-  vta:() => [`まず「事故の瞬間」（種別：事故事象）を置き、時間をさかのぼって直前の行動・判断・状態を追加します。図では事故が${S.meta.dir === 'down' ? '一番下' : '一番上'}に来ます。`,'1つの四角には、起きた事実を「誰が・何をした」「何が・どうだった」の形で1つだけ書きます。','ふだんと違った点に「いつもと違った」（変動要因）、それがなければ事故にならなかった点に「排除ノード」の印を付けます。','誰か・何かが気づけば流れを断てた矢印をクリックし、「ブレイク」を付けます。下の「作図チェック」も確かめてください。'],
+  vta:() => [`図の空いたマス（関係者の列×時点の行）をクリックすると、その場所に四角を追加できます。まず「事故の瞬間」を置きます（図では事故が${S.meta.dir === 'down' ? '一番下' : '一番上'}に来ます）。`,'四角はドラッグで別の列や時点へ動かせます。四角にマウスを乗せると出る●を、結果の側の四角までドラッグすると矢印が引けます。','ふだんと違った点に「いつもと違った」、なければ事故にならなかった点に「排除ノード」の印を付けます。誰か・何かが気づけば流れを断てた矢印はクリックして「ブレイク」にします。','操作を間違えたら「↶ 元に戻す」（Ctrl+Z）。下の「作図チェック」も確かめてください。'],
   why:['左の一覧から排除ノード（○）とブレイク（┄）を選び、「なぜ？」を繰り返します。ブレイクでは「なぜ流れを断てなかったか」を考えます。','1つの欄には1つの事柄を、誰が読んでも同じ意味になる具体的な言葉で書きます。要因が複数あれば「並列の要因」で漏れなく挙げます。','現場・現物・記録で確かめたものは「事実」、まだのものは「推測」にします。','根本要因から「だから」で逆に読み、話がつながるか確かめます。「注意する」以外の対策が打てるところまで掘り下げます。'],
   factors:['この画面は自動で集計されます。入力は不要です。','要因が「本人」に偏っていたら、決まり・道具・組織の側に見落としがないか見直します。'],
   measures:['根本要因ごとに対策を考えます。「対策の候補」から選び、自分たちの状況に合わせて書き換えるのが早道です。','「注意する」「徹底する」だけの対策は長続きしません。仕組みで防ぐ対策を優先します。'],
@@ -575,7 +627,9 @@ function renderHeader(){
 function render(){
   renderHeader();
   const f = {overview:renderOverview, vta:renderVTA, why:renderWhy, factors:renderFactors, measures:renderMeasures, report:renderReport, guide:renderGuide}[ui.tab];
-  $('#panel').innerHTML = f().replace('<!--howto-->', howto(ui.tab));
+  const order = ['overview','vta','why','factors','measures','report'], i = order.indexOf(ui.tab), lbl = id => TABS.find(t => t.id === id).label;
+  const nav = i < 0 ? '' : `<div class="stepnav">${i > 0 ? `<button class="btn" data-act="tab" data-id="${order[i-1]}">← ${lbl(order[i-1])}</button>` : '<span></span>'}${i < order.length-1 ? `<button class="btn primary" data-act="tab" data-id="${order[i+1]}">次へ：${lbl(order[i+1])} →</button>` : ''}</div>`;
+  $('#panel').innerHTML = f().replace('<!--howto-->', howto(ui.tab)) + nav;
 }
 
 /* ---------- 1 overview ---------- */
@@ -627,7 +681,9 @@ function wrapText(t, n, max){
 function vtaSVG(){
   const L = S.lanes, N = S.nodes, up = S.meta.dir !== 'down';
   const TW = 70, W = 178, BW = 152, BH = 78, RH = 104, HEAD = 48, PAD = 14;
-  const seqs = [...new Set(N.map(n => +n.seq || 0))].sort((a,b) => a-b);
+  const used = [...new Set(N.map(n => +n.seq || 0))].sort((a,b) => a-b);
+  /* 最後に空の行を1つ足し、次の時点の四角をそこへ置けるようにする */
+  const newSeq = (used.length ? used[used.length-1] : 0) + 1, seqs = [...used, newSeq];
   const cnt = {}, slot = {}, rowMax = {}, rowY = {}, pos = {};
   seqs.forEach(s => rowMax[s] = 1);
   [...N].sort((a,b) => a.seq - b.seq).forEach(n => {
@@ -652,7 +708,9 @@ function vtaSVG(){
     const t = N.find(n => (+n.seq||0) === s && n.time)?.time || '';
     if (i){ const ry = up ? A + B - rowY[s] : rowY[s]; g += `<line class="row-rule" x1="0" x2="${width}" y1="${ry}" y2="${ry}"/>`; }
     const c = fy(rowY[s], rowMax[s]*RH) + rowMax[s]*RH/2;
-    g += `<text class="seq-label" x="10" y="${c-4}">#${s}</text><text class="time-label" x="10" y="${c+12}">${esc(t)}</text>`;
+    g += s === newSeq ? `<text class="seq-label" x="10" y="${c+4}">次の時点</text>` : `<text class="seq-label" x="10" y="${c-4}">#${s}</text><text class="time-label" x="10" y="${c+12}">${esc(t)}</text>`;
+    L.forEach((l,li) => { const cy = fy(rowY[s], rowMax[s]*RH);
+      g += `<g class="cell-g"><rect class="cell" data-act="cell-add" data-lane="${l.id}" data-seq="${s}" x="${TW+li*W}" y="${cy}" width="${W}" height="${rowMax[s]*RH}"/><text class="cell-plus" x="${TW+li*W+W/2}" y="${cy+rowMax[s]*RH/2+4}" text-anchor="middle">＋ ここに追加</text></g>`; });
   });
   const brks = [];
   S.edges.forEach(e => {
@@ -675,15 +733,15 @@ function vtaSVG(){
     const p = pos[n.id]; if (!p) return;
     const cls = ['node', n.kind==='event'?'event':'', n.variation?'var':'', (ui.link ? ui.linkFrom===n.id : ui.sel===n.id)?'sel':''].join(' ');
     const lines = wrapText(n.text || '（内容未入力）', 11, 3);
-    g += `<g class="${cls}" data-act="sel-node" data-id="${n.id}" transform="translate(${p.x},${p.y})" tabindex="0" role="button" aria-label="${esc(KINDS[n.kind]+'：'+n.text)}">
+    g += `<g class="${cls}" data-act="sel-node" data-id="${n.id}" data-x="${p.x}" data-y="${p.y}" transform="translate(${p.x},${p.y})" tabindex="0" role="button" aria-label="${esc(KINDS[n.kind]+'：'+n.text)}">
       <title>${esc(n.text)}${n.normal ? '\nふだんは：' + esc(n.normal) : ''}</title>
       <rect class="n-box" width="${BW}" height="${BH}" rx="${n.variation?18:5}"/>
       <text class="n-kind" x="11" y="17">${KINDS[n.kind]}${n.variation?'・変動':''}</text>
       ${lines.map((t,i) => `<text class="n-text" x="11" y="${37+i*15.5}">${esc(t)}</text>`).join('')}
       ${n.elim ? `<circle class="n-elim-mark" cx="${BW-4}" cy="4" r="10"/>` : ''}
+      <circle class="n-handle" cx="${BW/2}" cy="${up ? 0 : BH}" r="8"><title>ドラッグして、結果の側の四角につなぐ</title></circle>
     </g>`;
   });
-  if (!N.length) g += `<text class="empty" x="${TW+16}" y="${HEAD+50}">まず「事故の瞬間」を右のパネルから追加してください（種別：事故事象）。</text>`;
   return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="VTA図">${g}</svg>`;
 }
 function vtaChecks(){
@@ -702,6 +760,7 @@ function vtaChecks(){
     else if (!outE) out.push({lv:'warn', id:n.id, msg:`${short(n)} から先の矢印がありません。事故につながる流れに入れるか、関係がなければ削除します。`});
     else if (events.length && !reach.has(n.id)) out.push({lv:'warn', id:n.id, msg:`${short(n)} が事故事象までつながっていません。`});
     if (n.elim && !n.variation) out.push({lv:'warn', id:n.id, msg:`${short(n)} は排除ノードですが「いつもと違った」の印がありません。排除ノードは変動要因の中から選びます。`});
+    if (n.elim && (n.kind === 'act' || n.kind === 'judge') && !n.srk) out.push({lv:'info', id:n.id, msg:`${short(n)}：行為・判断のレベル（SRK）が未選択です。原典のVTAは、これで「変えやすい判断」を見極めます。`});
     if (n.variation && !n.normal) out.push({lv:'info', id:n.id, msg:`${short(n)}：「ふだんはどうか」が空です。比べる基準を書くと、何が違ったのかがはっきりします。`});
     if (/べき|不注意|注意不足|確認不足|怠|油断|ミス|悪い/.test(n.text)) out.push({lv:'warn', id:n.id, msg:`${short(n)} に評価の言葉が入っています。VTAには、起きた事実だけを書きます。`});
     if ([...n.text].length > 40) out.push({lv:'info', id:n.id, msg:`${short(n)} は長めです。1つの四角に複数の出来事が入っていないか確かめます。`});
@@ -712,20 +771,23 @@ function vtaChecks(){
   if (!S.edges.some(e => e.brk)) out.push({lv:'info', msg:'「流れを断てた所（ブレイク）」がまだありません。誰か・何かが気づけば止められた矢印をクリックして設定します。'});
   return out;
 }
+const N0 = () => S.nodes.length > 0;
 function nodeForm(){
   const n = nodeById(ui.sel), isNew = !n;
-  const d = n || {lane: ui.lastLane || S.lanes[0]?.id, seq: nextSeq(), time:'', kind:'act', text:'', normal:'', variation:false, elim:false, note:''};
+  const d = n || {lane: ui.draft?.lane || ui.lastLane || S.lanes[0]?.id, seq: ui.draft?.seq ?? nextSeq(), time:'', kind: N0() ? 'act' : 'event', text:'', normal:'', srk:'', variation:false, elim:false, note:''};
   const preds = n ? S.edges.filter(e => e.to === n.id).map(e => e.from) : [];
   const others = S.nodes.filter(x => x.id !== d.id).sort((a,b) => a.seq - b.seq);
   return `
   <div class="form">
     <div class="sec-head"><h3>${isNew?'ノードを追加':'ノードを編集'}</h3>${isNew?'':`<button class="btn ghost sm" data-act="new-node">＋ 新規</button>`}</div>
+    ${isNew ? `<p class="small muted">${ui.draft ? `「${esc(laneName(d.lane))}」の #${d.seq} に追加します。` : '図の空いたマスをクリックすると、その場所に追加できます。'}${N0() ? '' : 'まず「事故の瞬間」から置きましょう。'}</p>` : ''}
     <label>誰が・何が（レーン）<select id="f-lane">${S.lanes.map(l => `<option value="${l.id}" ${l.id===d.lane?'selected':''}>${esc(l.name)}</option>`).join('')}</select></label>
     <div class="row2">
       <label>順序（同じ番号は同時刻）<input type="number" id="f-seq" min="0" value="${esc(d.seq)}"></label>
       <label>時刻<input type="text" id="f-time" value="${esc(d.time)}" placeholder="21:39"></label>
     </div>
     <label>種別<select id="f-kind">${Object.entries(KINDS).map(([k,v]) => `<option value="${k}" ${k===d.kind?'selected':''}>${v}</option>`).join('')}</select></label>
+    <label>行為・判断のレベル（SRK）<select id="f-srk">${Object.entries(SRK).map(([k,v]) => `<option value="${k}" ${k===(d.srk||'')?'selected':''}>${v}</option>`).join('')}</select></label>
     <label>内容（「誰が・何をした」を1つだけ）<textarea id="f-text" rows="3" placeholder="${esc(TEMPLATES[S.meta.type]?.ex || '例：○○が△△した')}">${esc(d.text)}</textarea></label>
     <label class="check"><input type="checkbox" id="f-var" ${d.variation?'checked':''}><span><b>いつもと違った</b>（変動要因）<br><span class="small muted">ふだんの手順や状態と違っていた</span></span></label>
     <label>ふだんはどうか（比べる基準）<input type="text" id="f-normal" value="${esc(d.normal)}" placeholder="例：カーブ手前で十分に減速する"></label>
@@ -793,7 +855,7 @@ function whyItem(w, depth){
       ${showErr?`<select id="we-${w.id}" data-why="${w.id}" data-field="err" aria-label="エラーの型">${Object.entries(ERR).map(([k,v]) => `<option value="${k}" ${k===w.err?'selected':''}>${v}</option>`).join('')}</select>`:''}
     </div>
     <textarea id="wt-${w.id}" data-why="${w.id}" data-field="text" rows="2" placeholder="なぜそうなったのか（事実に基づいて）" aria-label="要因">${esc(w.text)}</textarea>
-    ${(() => { const m = whyLint(w.text, !kids.length); return `<div class="lint" ${m.length?'':'hidden'}>${m.join('<br>')}</div>`; })()}
+    ${(() => { const m = whyLint(w.text, !kids.length, w.err); return `<div class="lint" ${m.length?'':'hidden'}>${m.join('<br>')}</div>`; })()}
     ${kids.length ? '' : `<div class="rootcause"><span class="rc">根本要因として扱います${S.measures.some(m => m.whyId===w.id)?'（対策あり）':'（対策未設定）'}</span>
       ${depth < 3 ? '<span>まだ浅いかもしれません。規則・教育・装備・体制など、仕組みのレベルに届くまで掘り下げましょう。</span>' : ''}
       ${showErr ? '<span>本人・周りの人の要因で止まっています。その行動を生んだ決まり・道具・環境・組織の側の要因がないか確かめます。</span>' : ''}
@@ -834,7 +896,7 @@ function renderWhy(){
         <details class="hints" ${roots.length ? '' : 'open'}><summary>要因を見つける質問（観点ごとに要因を追加できます）</summary>
           <div class="hint-grid">${Object.entries(SHELL).map(([k,v]) => `<div class="hint" data-shell="${k}"><b>${v.name}</b><ul>${v.q.map(q => `<li>${q}</li>`).join('')}</ul><button class="btn sm" data-act="why-root" data-shell="${k}">この観点で要因を追加</button></div>`).join('')}</div>
           <div class="errguide"><b>エラーの種類の見分け方</b>（本人・周りの人の要因に付けます）
-            <ol><li>決まりや手順を知っていて、わざと外れた → <b>違反</b></li>
+            <ol><li>決まりや手順を知っていて外れた → <b>違反</b>（ふだんから当たり前＝日常的／その場で守れなかった＝状況的／想定外でやむを得ず＝例外的）</li>
             <li>やろうとしたこと自体が間違っていた → <b>ミステイク</b>（経験やルールの当てはめ違いなら規則ベース、知識がなかったなら知識ベース）</li>
             <li>やろうとしたことは正しかったが、動作を誤った → <b>スリップ</b></li>
             <li>やろうとしたことは正しかったが、抜けた・忘れた → <b>ラプス</b></li></ol></div>
@@ -862,7 +924,7 @@ function whyChecks(){
   S.whys.forEach(w => {
     const leaf = !S.whys.some(x => x.parentId === w.id), d = depthOf(w);
     if (!w.text.trim()){ out.push({lv:'warn', id:w.nodeId, msg:'内容が空の要因があります。'}); return; }
-    if (whyLint(w.text, leaf).length) out.push({lv:'warn', id:w.nodeId, msg:`${q(w.text)}：書き方の見直しが必要です（カード内の注意を参照）。`});
+    if (whyLint(w.text, leaf, w.err).length) out.push({lv:'warn', id:w.nodeId, msg:`${q(w.text)}：書き方の見直しが必要です（カード内の注意を参照）。`});
     if (w.fact === 'guess') out.push({lv:'info', id:w.nodeId, msg:`${q(w.text)}は推測です。現場・現物・記録で確かめてから対策を決めます。`});
     if (leaf && d < 3) out.push({lv:'info', id:w.nodeId, msg:`${q(w.text)}で掘り下げが止まっています（なぜ${d}）。対策が打てる仕組みに届いているか確かめます。`});
   });
@@ -958,7 +1020,7 @@ function matrix(){
 }
 function suggestionsFor(w){
   const seen = new Set(S.measures.filter(m => m.whyId === w.id).map(m => m.text));
-  const list = [...(SUGGEST[w.err] || []), ...(SUGGEST[w.shell] || []), ...SUGGEST.all];
+  const list = [...(SUGGEST[w.err] || (w.err && w.err.startsWith('v') ? SUGGEST.violation : [])), ...(SUGGEST[w.shell] || []), ...SUGGEST.all];
   return list.filter((x,i) => list.findIndex(y => y[0] === x[0]) === i && !seen.has(x[0]));
 }
 function measureRow(m){
@@ -966,16 +1028,16 @@ function measureRow(m){
   const sel = (field, opts, val) => `<select id="ms-${field}-${m.id}" data-ms="${m.id}" data-field="${field}">${opts.map(([v,l]) => `<option value="${v}" ${String(v)===String(val)?'selected':''}>${l}</option>`).join('')}</select>`;
   const lvl3 = [[3,'高'],[2,'中'],[1,'低']];
   return `<div class="ms">
-    <div class="ms-top"><span class="ms-no">対策 ${msNo(m)}</span><input type="text" id="ms-text-${m.id}" data-ms="${m.id}" data-field="text" value="${esc(m.text)}" placeholder="何を、どう変えるか" aria-label="対策内容"><span class="prio ${cls}" title="効果×実現性">優先 ${p}</span><button class="btn ghost sm" data-act="ms-del" data-id="${m.id}" aria-label="対策を削除">✕</button></div>
+    <div class="ms-top"><span class="ms-no">対策 ${msNo(m)}</span><input type="text" id="ms-text-${m.id}" data-ms="${m.id}" data-field="text" value="${esc(m.text)}" placeholder="何を、どう変えるか" aria-label="対策内容"><span class="chip ${levelOf(m.level).s===3?'ok':levelOf(m.level).s===2?'var':'warn'}" title="RCA² Action Hierarchy による対策の強さ">強さ：${STRENGTH[levelOf(m.level).s]}</span><span class="prio ${cls}" title="効果×実現性">優先 ${p}</span><button class="btn ghost sm" data-act="ms-del" data-id="${m.id}" aria-label="対策を削除">✕</button></div>
     <div class="ms-grid">
       <label>発想（河野）${sel('kono', KONO.map((k,i) => [i, (i+1)+' '+k]), m.kono)}</label>
-      <label>対策の階層${sel('level', LEVELS.map(l => [l.id,l.label]), m.level)}</label>
+      <label style="grid-column:span 2">対策の種類（強さ）<select id="ms-level-${m.id}" data-ms="${m.id}" data-field="level">${[3,2,1].map(st => `<optgroup label="${STRENGTH[st]}い対策">${LEVELS.filter(l => l.s===st).map(l => `<option value="${l.id}" ${levelOf(m.level).id===l.id?'selected':''}>${STRENGTH[st]}：${l.label}</option>`).join('')}</optgroup>`).join('')}</select></label>
       <label>効果${sel('eff', lvl3, m.eff)}</label>
       <label>実現性${sel('feas', lvl3, m.feas)}</label>
       <label>担当<input type="text" id="ms-owner-${m.id}" data-ms="${m.id}" data-field="owner" value="${esc(m.owner)}"></label>
       <label>期限<input type="month" id="ms-due-${m.id}" data-ms="${m.id}" data-field="due" value="${esc(m.due)}"></label>
     </div>
-    ${m.level==='att' ? '<div class="lint">注意喚起だけの対策は、時間とともに効果が薄れます。装備・規則・訓練など上位の階層の対策と組み合わせてください。</div>' : ''}
+    ${levelOf(m.level).id==='att' ? '<div class="lint">注意喚起だけの対策は、時間とともに効果が薄れます。強い・中程度の対策と組み合わせてください。</div>' : ''}
   </div>`;
 }
 function renderMeasures(){
@@ -984,13 +1046,14 @@ function renderMeasures(){
   const konoCell = (k,i) => `<div class="${used.has(i)?'on':''}"><span>${i+1} ${k}</span><span class="mono">${S.measures.filter(m => +m.kono===i).length}</span></div>`;
   return `
   <div class="sec-head"><div><h2>再発防止対策</h2>
-    <p class="lead">根本要因ごとに対策を立てます。候補は要因の観点とエラーの種類から出しています。効果と実現性（それぞれ高・中・低）を掛けた値を、優先度の目安にします。</p></div></div>
+    <p class="lead">根本要因ごとに対策を立てます。候補は要因の観点とエラーの種類から出しています。対策の強さ（強・中・弱）は米国IHIのRCA²の分類に従います。効果と実現性を掛けた値を、優先度の目安にします。</p></div></div>
   <!--howto-->
   <div class="grid2" style="margin-top:16px">
     <section class="card"><h3>優先度マトリクス</h3><p class="small muted" style="margin:4px 0 10px">右上（効果が高く、実現しやすい）から着手します。番号は対策番号です。</p><div class="figure">${matrix()}</div></section>
     <section class="card"><h3>発想手順の使われ方</h3><p class="small muted" style="margin:4px 0 10px">1〜8は発生を防ぐ対策、9〜11は起きても被害を広げない対策です。両方がそろっているか確かめます。</p>
       <div class="kono"><span class="g">発生防止</span>${KONO.slice(0,8).map((k,i) => konoCell(k,i)).join('')}<span class="g">拡大防止</span>${KONO.slice(8).map((k,i) => konoCell(k,i+8)).join('')}</div></section>
   </div>
+  ${S.measures.length && !S.measures.some(m => levelOf(m.level).s >= 2) ? '<div class="lint" style="margin-top:16px">対策がすべて「弱い対策」です。RCA²（米国IHI）は、対策のうち少なくとも1つを「中」以上の強さにするよう求めています。</div>' : ''}
   <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px">
   ${lv.length ? lv.map(w => { const ms = S.measures.filter(m => m.whyId === w.id), n = targetById(w.nodeId);
     return `<section class="card cause-card">
@@ -1016,7 +1079,7 @@ function reportText(){
   out.push('', '2 事故に至る経過（VTA）');
   [...S.nodes].sort((a,b) => a.seq - b.seq).forEach(n => {
     const tag = [n.variation?'変動要因':'', n.elim?'排除ノード':''].filter(Boolean).join('・');
-    out.push(`  #${n.seq}${n.time?' '+n.time:''}［${laneName(n.lane)}］${n.text}${tag?'　◀'+tag:''}`);
+    out.push(`  #${n.seq}${n.time?' '+n.time:''}［${laneName(n.lane)}］${n.text}${n.srk?'〔'+SRK[n.srk].match(/（(.+)）/)[1]+'〕':''}${tag?'　◀'+tag:''}`);
     if (n.variation && n.normal) out.push(`      （ふだんは：${n.normal}）`);
   });
   const bk = S.edges.filter(e => e.brk && nodeById(e.from) && nodeById(e.to));
@@ -1036,7 +1099,7 @@ function reportText(){
     const w = S.whys.find(y => y.id === x.whyId);
     out.push(`  対策${msNo(x)}　${x.text}`);
     out.push(`    対象要因：${w?.text||''}`);
-    out.push(`    発想：${KONO[+x.kono]}　階層：${LEVELS.find(l => l.id===x.level)?.label||''}　優先度：${prio(x)}（効果${x.eff}×実現性${x.feas}）${x.owner?'　担当：'+x.owner:''}${x.due?'　期限：'+x.due:''}`);
+    out.push(`    発想：${KONO[+x.kono]}　種類：${levelOf(x.level).label}（強さ：${STRENGTH[levelOf(x.level).s]}）　優先度：${prio(x)}（効果${x.eff}×実現性${x.feas}）${x.owner?'　担当：'+x.owner:''}${x.due?'　期限：'+x.due:''}`);
   });
   const none = lv.filter(w => !S.measures.some(x => x.whyId === w.id));
   if (none.length){ out.push('', '  ※対策未設定の根本要因'); none.forEach(w => out.push(`    ・${w.text}`)); }
@@ -1072,10 +1135,14 @@ function renderGuide(){
       <p>事故に至る経過を、関係者・要素ごとに時系列で並べた樹形図です。通常の作業から外れた「変動」が連鎖して事故に至ったと考え、その連鎖をどこで断てたかを探します。</p>
       <ol><li>関係者・要素を横に並べ、縦を時間軸にする（JAXAの手引きでは下から上へ時間が進み、最上部が事故）</li><li>事故に至るまでの行為・判断・状態を、事実だけで1つずつ四角に書き、時間順に置いて矢印でつなぐ</li><li>ふだん（規則・手順・慣例）と違った点を変動要因とし、太枠で示す</li><li>それがなければ事故に至らなかった変動要因を排除ノードとし、右肩に○を付ける</li><li>誰か・何かが気づけば連鎖を断てた所をブレイクとし、矢印に破線を引く</li><li>排除ノードごとに背後要因を分析する（なぜなぜ分析）</li></ol>
       <p>記号の細部（○や破線の位置、時間の向き）は資料や組織によって違います。所属の様式があれば、それに合わせてください。</p>
-      <p class="src">Leplat & Rasmussen (1984)。JAXA「ヒューマンファクタ分析ハンドブック」(JERG-0-018A)、日本財団「ヒューマンファクター概念に基づく海難・危険情報の調査活用等に関する調査研究」ほか。</p></article>
+      <p>原典（Leplat & Rasmussen, 1984）は、過去の原因探しより<b>将来の改善点を見つけること</b>を目的とし、事故の経過に関わった判断のうち、技能・規則・知識（SRK）のどのレベルで行われたかを見て、変えやすい判断を探します。矢印で1つに集まる複数の原因は、すべてそろって次の出来事が起きた関係（AND）として描きます。</p>
+      <p class="src">Leplat, J. & Rasmussen, J. (1984) Analysis of human errors in industrial incidents and accidents for improvement of work safety. Accident Analysis & Prevention 16(2), 77–88。JAXA「ヒューマンファクタ分析ハンドブック」(JERG-0-018A) ほか。</p></article>
     <article class="card"><h3>なぜなぜ分析の約束ごと</h3>
       <ol><li>1つの欄には、主語を1つにして1つの事柄を書く</li><li>最初の「なぜ」は、出来事を直接引き起こした要因から考える</li><li>要因が複数あれば、並列に漏れなく挙げる</li><li>誰が読んでも同じ意味になる具体的な言葉を使う（「不十分」「不適切」で済ませない）</li><li>「思い込み」「焦り」など心の動きで止めず、そうさせた状況を掘り下げる</li><li>「やらなかった」のか「やって間違えた」のかを区別する</li><li>根本要因から「だから」で逆に読み、話の飛躍がないか確かめる</li><li>現場・現物・記録で事実を確かめ、推測は推測と明記する</li><li>再発防止策が打てる要因まで掘り下げる</li><li>「なぜ起きたか」（発生）と「なぜ止められなかったか」（流出）の両方を分析する</li></ol>
-      <p class="src">小倉仁志『なぜなぜ分析10則』（日科技連出版社, 2009）、同「なぜなぜ分析の10則」（マネジメント・ダイナミクス）ほか。発生と流出の2系統は製造業の品質管理での一般的な進め方。</p></article>
+      <p><b>米国VAの「因果関係の5つのルール」</b>（要因の書き方の最低基準）</p>
+      <ol><li>原因と結果のつながりがはっきり分かるように書く</li><li>「不十分」「不適切」などのあいまいな言葉や否定的な言葉を使わず、具体的に書く</li><li>ヒューマンエラーには、必ずその前の原因がある</li><li>手順からの逸脱（違反）にも、必ずその前の原因がある</li><li>「〜しなかった」が原因になるのは、そうする決まりや義務があった場合だけ</li></ol>
+      <p>また、RCA²は「なぜ」を一本道で5回たどるだけでは、上流の原因を見落とすと指摘しています。回数にこだわらず、枝分かれさせて漏れなく挙げます。</p>
+      <p class="src">小倉仁志『なぜなぜ分析10則』（日科技連出版社, 2009）、同「なぜなぜ分析の10則」（マネジメント・ダイナミクス）ほか。発生と流出の2系統は製造業の品質管理での一般的な進め方。</p><p class="src">米国退役軍人省 患者安全センター（VA NCPS）「Five Rules of Causation」（D. Marx の研究に基づく）、NPSF/IHI『RCA²: Improving Root Cause Analyses and Actions to Prevent Harm』(2015)。</p></article>
     <article class="card"><h3>m-SHELLモデル</h3>
       <p>中央の人間（L）と、それを取り巻く要素との接点で不具合が起きると考えるモデルです。</p>
       <ul>${Object.entries(SHELL).map(([k,v]) => `<li><b>${v.name}</b>：${v.desc}</li>`).join('')}</ul>
@@ -1084,12 +1151,21 @@ function renderGuide(){
       <ul>${Object.entries(ERR).filter(([k]) => k).map(([,v]) => `<li>${v}</li>`).join('')}</ul>
       <p>Rasmussenは行動を、慣れた操作を無意識に行う<b>技能ベース</b>、手順や経験則に当てはめる<b>規則ベース</b>、初めての状況で考えて判断する<b>知識ベース</b>の3段階に分けました。スリップ・ラプスは技能ベース、ミステイクは規則・知識ベースで起きやすくなります。乗り慣れた旧型車の感覚で新型車を運転する場面は、規則ベースの当てはめ違いの典型です。</p>
       <p class="src">Reason, Human Error (1990)／Rasmussen (1983)</p></article>
+    <article class="card"><h3>海外の一次資料との対応</h3>
+      <div class="tablewrap"><table class="terms"><thead><tr><th>このツールの機能</th><th>拠りどころ</th></tr></thead><tbody>
+        <tr><td>VTA・SRK</td><td>Leplat & Rasmussen (1984), Accident Analysis & Prevention</td></tr>
+        <tr><td>要因の書き方の注意</td><td>米国VA NCPS「Five Rules of Causation」</td></tr>
+        <tr><td>対策の強さ（強・中・弱）</td><td>NPSF/IHI「RCA²」Action Hierarchy (2015)</td></tr>
+        <tr><td>エラーと違反の種類</td><td>英国HSE「HSG48 Reducing error and influencing behaviour」、Reason (1990)</td></tr>
+        <tr><td>直接・背後・根本の原因、責任追及をしない</td><td>英国HSE「HSG245 Investigating accidents and incidents」</td></tr>
+        <tr><td>6つの観点</td><td>SHELLモデル（Edwards 1972, Hawkins 1975）。m（管理）は日本での拡張</td></tr>
+      </tbody></table></div></article>
     <article class="card"><h3>スイスチーズモデル</h3>
       <p>組織・規則・装備などの防護層にはそれぞれ穴（弱点）があり、穴が一直線に並んだときに事故が起きます。現場の当事者の行為は<b>即発的エラー</b>、組織や規則に潜む弱点は<b>潜在的条件</b>と呼ばれ、再発防止では潜在的条件の穴をふさぐことが重視されます。</p>
       <p class="src">Reason, Managing the Risks of Organizational Accidents (1997)</p></article>
     <article class="card"><h3>エラー対策の発想手順（河野）</h3>
       <ol>${KONO.map(k => `<li>${k}</li>`).join('')}</ol>
-      <p>1〜8が発生防止、9〜11が拡大防止です。対策の階層は、強い順に「除去・代替 → 工学的対策 → 管理的対策 → 教育・訓練 → 注意喚起」。注意喚起だけの対策は効果が長続きしません。</p>
+      <p>1〜8が発生防止、9〜11が拡大防止です。対策の強さは、米国退役軍人省（VA）とIHIのRCA²の分類で判定します。構造の変更・フールプルーフ・標準化が「強」、人員や負担の見直し・チェックリスト・訓練の工夫が「中」、ダブルチェック・警告表示・規則の追加・教育が「弱」です。弱い対策だけで終わらせず、少なくとも1つは「中」以上を入れます。</p>
       <p class="src">河野龍太郎『医療におけるヒューマンエラー』ほか</p></article>
   </div>`;
 }
@@ -1117,10 +1193,14 @@ function loadData(d){
 }
 
 document.addEventListener('click', e => {
+  if (ui.suppressClick){ ui.suppressClick = false; return; }
   const a = e.target.closest('[data-act]'); if (!a) return;
   const id = a.dataset.id;
   switch (a.dataset.act){
     case 'tab': setTab(id); break;
+    case 'undo': undo(); break;
+    case 'redo': redo(); break;
+    case 'cell-add': if (ui.link) return; ui.sel = null; ui.draft = {lane:a.dataset.lane, seq:+a.dataset.seq}; render(); $('#f-text')?.focus(); break;
     case 'sel-node':
       if (ui.link){
         if (!ui.linkFrom || ui.linkFrom === id){ ui.linkFrom = ui.linkFrom === id ? null : id; render(); break; }
@@ -1128,7 +1208,7 @@ document.addEventListener('click', e => {
         if (i >= 0){ S.edges.splice(i, 1); toast('矢印を消しました'); } else { S.edges.push({from:ui.linkFrom, to:id}); toast('矢印でつなぎました'); }
         ui.linkFrom = null; save(); render(); break;
       }
-      ui.sel = id; render(); break;
+      ui.sel = id; ui.draft = null; render(); break;
     case 'toggle-brk': { const e = S.edges.find(x => x.from === a.dataset.from && x.to === a.dataset.to); if (!e) return; e.brk = !e.brk; save(); render(); toast(e.brk ? 'ブレイク（流れを断てた所）を付けました' : 'ブレイクを外しました'); break; }
     case 'flip-dir': S.meta.dir = S.meta.dir === 'down' ? 'up' : 'down'; save(); render(); break;
     case 'link-mode': ui.link = !ui.link; ui.linkFrom = null; render(); break;
@@ -1138,12 +1218,12 @@ document.addEventListener('click', e => {
       if (!text){ toast('内容を入力してください'); $('#f-text').focus(); return; }
       let n = nodeById(ui.sel);
       if (!n){ n = {id:uid('n')}; S.nodes.push(n); }
-      Object.assign(n, {lane:$('#f-lane').value, seq:+$('#f-seq').value || 0, time:$('#f-time').value.trim(), kind:$('#f-kind').value, text, normal:$('#f-normal').value.trim(), variation:$('#f-var').checked || $('#f-elim').checked, elim:$('#f-elim').checked, note:$('#f-note').value});
+      Object.assign(n, {lane:$('#f-lane').value, seq:+$('#f-seq').value || 0, time:$('#f-time').value.trim(), kind:$('#f-kind').value, text, normal:$('#f-normal').value.trim(), srk:$('#f-srk').value, variation:$('#f-var').checked || $('#f-elim').checked, elim:$('#f-elim').checked, note:$('#f-note').value});
       const preds = [...document.querySelectorAll('.f-pred:checked')].map(x => x.value);
       const old = S.edges.filter(x => x.to === n.id);
       S.edges = S.edges.filter(x => x.to !== n.id).concat(preds.map(p => ({from:p, to:n.id, brk:!!old.find(o => o.from === p)?.brk})));
       ui.lastLane = n.lane;
-      const wasNew = ui.sel !== n.id; ui.sel = wasNew ? null : n.id;
+      const wasNew = ui.sel !== n.id; ui.sel = wasNew ? null : n.id; ui.draft = null;
       save(); render(); toast(wasNew ? 'ノードを追加しました' : 'ノードを更新しました');
       break; }
     case 'del-node': {
@@ -1170,7 +1250,7 @@ document.addEventListener('click', e => {
       if (!kids && !w.text){ removeWhy(id); save(); render(); return; }
       askConfirm('要因を削除', `「${w.text || '（未入力）'}」${kids?'と、その下の要因':''}を削除します。関連する対策も削除されます。`, () => { removeWhy(id); save(); render(); });
       break; }
-    case 'ms-add': { const m = {id:uid('m'), whyId:id, text:'', kono:0, level:'adm', eff:2, feas:2, owner:'', due:''}; S.measures.push(m); save(); render(); $('#ms-text-'+m.id)?.focus(); break; }
+    case 'ms-add': { const m = {id:uid('m'), whyId:id, text:'', kono:0, level:'policy', eff:2, feas:2, owner:'', due:''}; S.measures.push(m); save(); render(); $('#ms-text-'+m.id)?.focus(); break; }
     case 'ms-sugg': { const w = S.whys.find(x => x.id === id), x = w && suggestionsFor(w).find(y => y[0] === a.dataset.text); if (!x) return;
       const m = {id:uid('m'), whyId:id, text:x[0], kono:x[1], level:x[2], eff:2, feas:2, owner:'', due:''}; S.measures.push(m); save(); render(); $('#ms-text-'+m.id)?.focus(); break; }
     case 'ms-del': S.measures = S.measures.filter(m => m.id !== id); save(); render(); break;
@@ -1200,13 +1280,75 @@ document.addEventListener('click', e => {
   }
 });
 document.addEventListener('keydown', e => {
+  const typing = e.target.closest?.('input,textarea,select');
+  if ((e.ctrlKey || e.metaKey) && !typing){
+    const k = e.key.toLowerCase();
+    if (k === 'z'){ e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+    if (k === 'y'){ e.preventDefault(); redo(); return; }
+  }
+  if (e.key === 'Escape' && drag){ cancelDrag(); return; }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('g.node')){ e.preventDefault(); ui.sel = e.target.dataset.id; render(); }
+});
+/* ---------- VTA：四角をドラッグして移動、●をドラッグして矢印でつなぐ ---------- */
+let drag = null, dropEl = null;
+function svgPt(svg, e){ const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(svg.getScreenCTM().inverse()); }
+function hits(e){ return document.elementsFromPoint(e.clientX, e.clientY); }
+function nodeUnder(e, except){ for (const el of hits(e)){ const g = el.closest?.('g.node'); if (g && g.dataset.id !== except) return g; } return null; }
+function cellUnder(e){ return hits(e).find(el => el.classList?.contains('cell')) || null; }
+function markDrop(el){ if (dropEl && dropEl !== el) dropEl.classList.remove('drop'); if (el) el.classList.add('drop'); dropEl = el; }
+function cancelDrag(){ if (!drag) return; drag.line?.remove(); drag = null; markDrop(null); render(); }
+document.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || ui.tab !== 'vta') return;
+  const g = e.target.closest?.('g.node'); if (!g) return;
+  const svg = g.ownerSVGElement;
+  if (e.target.closest('.n-handle')){
+    e.preventDefault();
+    const p0 = svgPt(svg, e), line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('class', 'temp-link');
+    ['x1','x2'].forEach(k => line.setAttribute(k, p0.x)); ['y1','y2'].forEach(k => line.setAttribute(k, p0.y));
+    svg.appendChild(line);
+    drag = {type:'link', from:g.dataset.id, svg, line};
+    return;
+  }
+  if (ui.link) return;
+  drag = {type:'move', id:g.dataset.id, g, svg, x0:e.clientX, y0:e.clientY, tx:+g.dataset.x, ty:+g.dataset.y, moved:false};
+});
+document.addEventListener('pointermove', e => {
+  if (!drag) return;
+  if (drag.type === 'link'){
+    const p = svgPt(drag.svg, e); drag.line.setAttribute('x2', p.x); drag.line.setAttribute('y2', p.y);
+    markDrop(nodeUnder(e, drag.from)); return;
+  }
+  const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+  if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+  drag.moved = true; drag.g.classList.add('dragging');
+  const k = drag.svg.getScreenCTM().a || 1;
+  drag.g.setAttribute('transform', `translate(${drag.tx + dx/k},${drag.ty + dy/k})`);
+  markDrop(cellUnder(e));
+});
+document.addEventListener('pointerup', e => {
+  if (!drag) return;
+  const d = drag; drag = null; markDrop(null);
+  const quiet = () => { ui.suppressClick = true; setTimeout(() => ui.suppressClick = false, 60); };
+  if (d.type === 'link'){
+    d.line.remove();
+    const t = nodeUnder(e, d.from); if (!t) return;
+    quiet();
+    if (S.edges.some(x => x.from === d.from && x.to === t.dataset.id)){ toast('その矢印はもう引かれています'); return; }
+    S.edges.push({from:d.from, to:t.dataset.id}); save(); render(); toast('矢印でつなぎました');
+    return;
+  }
+  if (!d.moved) return;
+  quiet();
+  const c = cellUnder(e), n = nodeById(d.id);
+  if (c && n){ n.lane = c.dataset.lane; n.seq = +c.dataset.seq; save(); toast('四角を移動しました'); }
+  render();
 });
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.meta){ S.meta[t.dataset.meta] = t.value; save(); if (t.dataset.meta === 'title') $('#case-title').textContent = t.value || '事案名が未入力です'; return; }
   if (t.dataset.why){ const w = S.whys.find(x => x.id === t.dataset.why); if (!w) return; w[t.dataset.field] = t.value; save();
-    if (t.dataset.field === 'text'){ const l = t.parentElement.querySelector('.lint'); if (l){ const m = whyLint(t.value, !S.whys.some(x => x.parentId === w.id)); l.innerHTML = m.join('<br>'); l.hidden = !m.length; } } return; }
+    if (t.dataset.field === 'text'){ const l = t.parentElement.querySelector('.lint'); if (l){ const m = whyLint(t.value, !S.whys.some(x => x.parentId === w.id), w.err); l.innerHTML = m.join('<br>'); l.hidden = !m.length; } } return; }
   if (t.dataset.ms){ const m = S.measures.find(x => x.id === t.dataset.ms); if (!m) return; const f = t.dataset.field; m[f] = (f==='eff'||f==='feas'||f==='kono') ? +t.value : t.value; save(); return; }
   if (t.dataset.lane){ const l = S.lanes.find(x => x.id === t.dataset.lane); if (l){ l.name = t.value; save(); } }
 });
@@ -1217,6 +1359,7 @@ document.addEventListener('change', e => {
   if (t.tagName === 'TEXTAREA' && t.dataset.why){ const el = $('#why-checks'); if (el) el.outerHTML = whyChecksHTML(); }
 });
 
+snap = JSON.stringify(S);
 render();
 $('#save-state').textContent = S.isSample ? 'サンプルを表示中（編集すると自動保存）' : 'このブラウザに自動保存済み';
 </script>
