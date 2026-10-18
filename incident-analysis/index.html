@@ -1315,8 +1315,8 @@ document.addEventListener('click', e => {
     case 'download-json': {
       try {
         const url = URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], {type:'application/json'}));
-        const link = document.createElement('a'); link.href = url; link.download = (S.meta.title || 'vta-analysis').replace(/[\\/:*?"<>|]/g,'_') + '.json';
-        document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+        const link = document.createElement('a'); link.href = url; link.download = 'vta-analysis-' + new Date().toISOString().slice(0,10) + '.json';
+        (a.closest("dialog") || document.body).appendChild(link); link.click(); setTimeout(() => { link.remove(); URL.revokeObjectURL(url); }, 2000);
         toast('保存を開始しました。保存されない環境では「コピー」を使ってください');
       } catch(_){ toast('この環境ではファイル保存ができません。「コピー」を使ってください'); }
       break; }
