@@ -108,7 +108,8 @@ legend{font-size:12.5px;color:var(--muted);font-weight:700;padding:0 4px}
 .sw{width:22px;height:13px;border:1px solid var(--line-strong);border-radius:3px;background:var(--surface)}
 .sw.var{border:2.5px solid var(--var);background:var(--var-soft);border-radius:7px}
 .sw.event{background:var(--accent);border-color:var(--accent)}
-.sw.x{border:0;background:none;color:var(--accent);font-weight:700;width:auto}
+.sw.o{width:14px;height:14px;border-radius:50%;border:3px solid var(--accent)}
+.sw.brk{border:0;border-top:3px dashed var(--accent);border-radius:0;height:0;background:none}
 
 svg .lane{fill:var(--surface)} svg .lane.odd{fill:var(--sunk)}
 svg .lane-name{fill:var(--ink);font-family:var(--f-display);font-weight:700;font-size:13.5px}
@@ -130,8 +131,17 @@ svg .n-kind{fill:var(--muted);font-size:10.5px;font-weight:700}
 svg .node.var .n-kind{fill:var(--var)}
 svg .n-elim{fill:var(--accent);font-size:10.5px;font-weight:700}
 svg .n-text{fill:var(--ink);font-size:12.5px}
-svg .brk circle{fill:var(--surface);stroke:var(--accent);stroke-width:2}
-svg .brk path{stroke:var(--accent);stroke-width:2.4;stroke-linecap:round}
+svg .edge-hit{fill:none;stroke:transparent;stroke-width:14;cursor:pointer}
+svg .edge-g:hover .edge{stroke:var(--ink);stroke-width:2}
+svg .brk-line{stroke:var(--accent);stroke-width:3;stroke-dasharray:7 4}
+svg .brk-lbl{fill:var(--accent);font-size:10.5px;font-weight:700}
+svg .n-elim-mark{fill:var(--surface);stroke:var(--accent);stroke-width:3}
+svg .time-axis{stroke:var(--muted);stroke-width:1.4;fill:none}
+svg .cap2{fill:var(--muted);font-size:10.5px}
+.checks{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.checks button{display:flex;gap:8px;align-items:flex-start;text-align:left;border:1px solid var(--line);background:var(--sunk);border-radius:5px;padding:6px 10px;font-size:13px}
+.checks .ic{flex:0 0 auto;font-weight:700}
+.checks .warn .ic{color:var(--warn)} .checks .info .ic{color:var(--muted)}
 svg .empty{fill:var(--muted);font-size:13px}
 
 /* chips */
@@ -471,17 +481,29 @@ function sampleOffice(){
     ]
   };
 }
+const SAMPLE_NORMAL = {
+  n1:'新型車の導入時は、車両特性に応じた慣熟訓練を行う', n2:'旧型車は重心が低く、横揺れが小さい', n4:'出場時も安全な到着を優先する', n5:'晴天・乾燥路面',
+  n7:'車両指揮者が速度や危険箇所を機関員に助言する', n8:'カーブ手前で十分に減速して進入する', n9:'下りの右カーブは30km/h程度で進入する', n11:'緩やかな操作で姿勢を立て直す',
+  a1:'送信前に宛先と添付を別の職員が確認する', a2:'通知は日中に分散して処理する', a4:'同じ名字の候補は所属や住所で区別できる', a5:'宛先をアドレスで照合してから送信する', a6:'確認者が送信前に宛先と添付を確認する'
+};
+const SAMPLE_BRK = ['n8>n9','n7>n9','a5>a7'];
+function withExtras(d){
+  d.meta.dir = 'up';
+  d.nodes.forEach(n => n.normal = SAMPLE_NORMAL[n.id] || '');
+  d.edges.forEach(e => { if (SAMPLE_BRK.includes(e.from + '>' + e.to)) e.brk = true; });
+  return d;
+}
 function blank(type){
   const t = TEMPLATES[type] || TEMPLATES.other;
   return {version:1,isSample:false,
-    meta:{type,title:'',date:'',place:'',vehicle:'',crew:'',weather:'',road:'',summary:'',damage:''},
+    meta:{type,dir:'up',title:'',date:'',place:'',vehicle:'',crew:'',weather:'',road:'',summary:'',damage:''},
     lanes:t.lanes.map(name => ({id:uid('l'), name})),
     nodes:[],edges:[],whys:[],measures:[]};
 }
 
 let S = null;
 try { const raw = localStorage.getItem(KEY); if (raw) S = JSON.parse(raw); } catch(_){}
-if (!valid(S)) S = sample();
+if (!valid(S)) S = withExtras(sample());
 const ui = {tab:'overview', sel:null, target:null, confirm:null, lastLane:null};
 try { const t = localStorage.getItem(KEY+':tab'); if (TABS.some(x=>x.id===t)) ui.tab = t; } catch(_){}
 
@@ -519,13 +541,13 @@ function shellChip(k, fill){ return k ? `<span class="chip ${fill?'fill':''}" da
 /* ---------- shell ---------- */
 const HOWTO = {
   overview:['起きたことを、事実だけで書きます。「〜すべきだった」などの評価は書きません。','誰の責任かではなく、なぜ起きたかを明らかにするのが目的です。'],
-  vta:['一番下に「事故の瞬間」を置き、そこから時間をさかのぼって、直前の行動や状態を追加していきます。','1つの四角には「誰が・何をした」か「何が・どうだった」かを1つだけ書きます。','いつもと違った点に「いつもと違った」の印、そこで流れを断てば事故にならなかった点に「ここで止められた」の印を付けます。'],
-  why:['左の一覧から「ここで止められた点」を選び、「なぜ？」を繰り返します。','行き詰まったら、下の「要因を見つける質問」を使ってください。観点ごとに要因を追加できます。','「注意する」以外の対策が思いつくところまで掘り下げたら、そこが根本要因です。'],
+  vta:() => [`まず「事故の瞬間」（種別：事故事象）を置き、時間をさかのぼって直前の行動・判断・状態を追加します。図では事故が${S.meta.dir === 'down' ? '一番下' : '一番上'}に来ます。`,'1つの四角には、起きた事実を「誰が・何をした」「何が・どうだった」の形で1つだけ書きます。','ふだんと違った点に「いつもと違った」（変動要因）、それがなければ事故にならなかった点に「排除ノード」の印を付けます。','誰か・何かが気づけば流れを断てた矢印をクリックし、「ブレイク」を付けます。下の「作図チェック」も確かめてください。'],
+  why:['左の一覧から排除ノード（○）を優先して選び、「なぜ？」を繰り返します。','行き詰まったら、下の「要因を見つける質問」を使ってください。観点ごとに要因を追加できます。','「注意する」以外の対策が思いつくところまで掘り下げたら、そこが根本要因です。'],
   factors:['この画面は自動で集計されます。入力は不要です。','要因が「本人」に偏っていたら、決まり・道具・組織の側に見落としがないか見直します。'],
   measures:['根本要因ごとに対策を考えます。「対策の候補」から選び、自分たちの状況に合わせて書き換えるのが早道です。','「注意する」「徹底する」だけの対策は長続きしません。仕組みで防ぐ対策を優先します。'],
   report:['コピーして、所属の様式に貼り付けてください。']
 };
-const howto = t => HOWTO[t] ? `<div class="howto"><b>この画面でやること</b><ol>${HOWTO[t].map(x => `<li>${x}</li>`).join('')}</ol></div>` : '';
+const howto = t => HOWTO[t] ? `<div class="howto"><b>この画面でやること</b><ol>${(typeof HOWTO[t] === 'function' ? HOWTO[t]() : HOWTO[t]).map(x => `<li>${x}</li>`).join('')}</ol></div>` : '';
 function renderHeader(){
   $('#case-title').textContent = S.meta.title || '事案名が未入力です';
   $('#sample-band').hidden = !S.isSample;
@@ -544,8 +566,8 @@ function progress(){
   return [
     {t:'事案の事実を記録する', d:'日時・場所・車両・気象・被害を、評価を交えず事実として書く。', done:!!(S.meta.title && S.meta.summary), tab:'overview'},
     {t:'出来事を時間順に並べる（VTA）', d:'関係者・要素ごとの欄に、行動・判断・状態を時間順に置き、矢印でつなぐ。', done:S.nodes.length >= 5 && S.edges.length >= 4, tab:'vta'},
-    {t:'「いつもと違った点」と「ここで止められた点」に印を付ける', d:'専門用語では変動要因と排除ノードと呼びます。', done:S.nodes.some(n => n.variation) && elims.length > 0, tab:'vta'},
-    {t:'止められた点ごとに「なぜ？」を繰り返す', d:'対策が打てる仕組みのレベルまで掘り下げ、要因を6つの観点で分類する。', done:elims.length > 0 && elims.every(n => S.whys.some(w => w.nodeId === n.id)), tab:'why'},
+    {t:'変動要因・排除ノード・ブレイクの印を付ける', d:'いつもと違った点、なければ事故にならなかった点、流れを断てた所に印を付ける。', done:S.nodes.some(n => n.variation) && elims.length > 0, tab:'vta'},
+    {t:'排除ノードごとに「なぜ？」を繰り返す', d:'対策が打てる仕組みのレベルまで掘り下げ、要因を6つの観点で分類する。', done:elims.length > 0 && elims.every(n => S.whys.some(w => w.nodeId === n.id)), tab:'why'},
     {t:'根本要因すべてに対策を立てる', d:'候補を参考に、注意喚起に頼らない対策を選ぶ。', done:lv.length > 0 && lv.every(w => S.measures.some(m => m.whyId === w.id)), tab:'measures'}
   ];
 }
@@ -584,7 +606,7 @@ function wrapText(t, n, max){
   return out;
 }
 function vtaSVG(){
-  const L = S.lanes, N = S.nodes;
+  const L = S.lanes, N = S.nodes, up = S.meta.dir !== 'down';
   const TW = 70, W = 178, BW = 152, BH = 78, RH = 104, HEAD = 48, PAD = 14;
   const seqs = [...new Set(N.map(n => +n.seq || 0))].sort((a,b) => a-b);
   const cnt = {}, slot = {}, rowMax = {}, rowY = {}, pos = {};
@@ -595,54 +617,85 @@ function vtaSVG(){
   });
   let y = HEAD + PAD;
   seqs.forEach(s => { rowY[s] = y; y += rowMax[s] * RH; });
-  const height = Math.max(y + PAD, HEAD + RH + PAD), width = TW + L.length * W + PAD;
+  const A = HEAD + PAD, B = Math.max(y, A + RH);
+  /* 下→上（JAXA式）のときは、行の並びを上下反転する */
+  const fy = (yy, h) => up ? A + B - yy - h : yy;
+  const height = B + PAD, width = TW + L.length * W + PAD;
   N.forEach(n => { const li = L.findIndex(l => l.id === n.lane); if (li < 0) return;
-    pos[n.id] = {x: TW + li*W + (W-BW)/2, y: rowY[+n.seq||0] + slot[n.id]*RH + (RH-BH)/2}; });
+    pos[n.id] = {x: TW + li*W + (W-BW)/2, y: fy(rowY[+n.seq||0] + slot[n.id]*RH + (RH-BH)/2, BH)}; });
 
   let g = `<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>`;
   g += `<rect class="lane" x="0" y="0" width="${TW}" height="${height}"/><text class="seq-label" x="10" y="28">順序 / 時刻</text>`;
   L.forEach((l,i) => { g += `<rect class="lane ${i%2?'':'odd'}" x="${TW+i*W}" y="0" width="${W}" height="${height}"/><text class="lane-name" x="${TW+i*W+W/2}" y="29" text-anchor="middle">${esc(l.name)}</text>`; });
   g += `<line class="head-rule" x1="0" x2="${width}" y1="${HEAD}" y2="${HEAD}"/>`;
+  g += `<path class="time-axis" d="M${TW-8},${up ? B-6 : A+6} L${TW-8},${up ? A+6 : B-6}" marker-end="url(#arrow)"/><text class="cap2" x="${TW-14}" y="${up ? A+14 : B-8}" text-anchor="end">時間</text>`;
   seqs.forEach((s,i) => {
     const t = N.find(n => (+n.seq||0) === s && n.time)?.time || '';
-    if (i) g += `<line class="row-rule" x1="0" x2="${width}" y1="${rowY[s]}" y2="${rowY[s]}"/>`;
-    g += `<text class="seq-label" x="10" y="${rowY[s]+RH/2-4}">#${s}</text><text class="time-label" x="10" y="${rowY[s]+RH/2+12}">${esc(t)}</text>`;
+    if (i){ const ry = up ? A + B - rowY[s] : rowY[s]; g += `<line class="row-rule" x1="0" x2="${width}" y1="${ry}" y2="${ry}"/>`; }
+    const c = fy(rowY[s], rowMax[s]*RH) + rowMax[s]*RH/2;
+    g += `<text class="seq-label" x="10" y="${c-4}">#${s}</text><text class="time-label" x="10" y="${c+12}">${esc(t)}</text>`;
   });
-  const brk = [];
+  const brks = [];
   S.edges.forEach(e => {
     const a = pos[e.from], b = pos[e.to]; if (!a || !b) return;
     let d, mx, my;
-    if (b.y > a.y + 4){
-      const x1 = a.x+BW/2, y1 = a.y+BH, x2 = b.x+BW/2, y2 = b.y, dy = (y2-y1)/2;
-      d = `M${x1},${y1} C${x1},${y1+dy} ${x2},${y2-dy} ${x2},${y2}`;
-      const t = Math.min(.5, 30/Math.max(1, y2-y1) + .1), u = 1-t;
-      mx = u*u*u*x1 + 3*u*u*t*x1 + 3*u*t*t*x2 + t*t*t*x2; my = u*u*u*y1 + 3*u*u*t*(y1+dy) + 3*u*t*t*(y2-dy) + t*t*t*y2;
+    if (Math.abs(b.y - a.y) > 4){
+      const down = b.y > a.y;
+      const x1 = a.x+BW/2, y1 = down ? a.y+BH : a.y, x2 = b.x+BW/2, y2 = down ? b.y : b.y+BH, dy = (y2-y1)/2;
+      d = `M${x1},${y1} C${x1},${y1+dy} ${x2},${y2-dy} ${x2},${y2}`; mx = (x1+x2)/2; my = (y1+y2)/2;
     } else {
       const dir = b.x >= a.x ? 1 : -1;
       const x1 = a.x + (dir>0?BW:0), y1 = a.y+BH/2, x2 = b.x + (dir>0?0:BW), y2 = b.y+BH/2;
-      d = `M${x1},${y1} L${x2},${y2}`; mx = x1 + (x2-x1)*.3; my = y1 + (y2-y1)*.3;
+      d = `M${x1},${y1} L${x2},${y2}`; mx = (x1+x2)/2; my = (y1+y2)/2;
     }
-    g += `<path class="edge" d="${d}" marker-end="url(#arrow)"/>`;
-    if (nodeById(e.from)?.elim) brk.push([mx,my]);
+    g += `<g class="edge-g" data-act="toggle-brk" data-from="${e.from}" data-to="${e.to}"><title>クリックでブレイク（流れを断てた所）を付け外し</title><path class="edge-hit" d="${d}"/><path class="edge" d="${d}" marker-end="url(#arrow)"/></g>`;
+    if (e.brk) brks.push([mx,my]);
   });
-  brk.forEach(([x,y]) => { g += `<g class="brk" transform="translate(${x},${y})"><circle r="9"/><path d="M-4,-4 L4,4 M4,-4 L-4,4"/></g>`; });
+  brks.forEach(([x,y]) => { g += `<g transform="translate(${x},${y})" pointer-events="none"><line class="brk-line" x1="-22" x2="22" y1="0" y2="0"/></g>`; });
   N.forEach(n => {
     const p = pos[n.id]; if (!p) return;
     const cls = ['node', n.kind==='event'?'event':'', n.variation?'var':'', (ui.link ? ui.linkFrom===n.id : ui.sel===n.id)?'sel':''].join(' ');
     const lines = wrapText(n.text || '（内容未入力）', 11, 3);
     g += `<g class="${cls}" data-act="sel-node" data-id="${n.id}" transform="translate(${p.x},${p.y})" tabindex="0" role="button" aria-label="${esc(KINDS[n.kind]+'：'+n.text)}">
+      <title>${esc(n.text)}${n.normal ? '\nふだんは：' + esc(n.normal) : ''}</title>
       <rect class="n-box" width="${BW}" height="${BH}" rx="${n.variation?18:5}"/>
       <text class="n-kind" x="11" y="17">${KINDS[n.kind]}${n.variation?'・変動':''}</text>
-      ${n.elim?`<text class="n-elim" x="${BW-11}" y="17" text-anchor="end">✕ 止める点</text>`:''}
       ${lines.map((t,i) => `<text class="n-text" x="11" y="${37+i*15.5}">${esc(t)}</text>`).join('')}
+      ${n.elim ? `<circle class="n-elim-mark" cx="${BW-4}" cy="4" r="10"/>` : ''}
     </g>`;
   });
   if (!N.length) g += `<text class="empty" x="${TW+16}" y="${HEAD+50}">まず「事故の瞬間」を右のパネルから追加してください（種別：事故事象）。</text>`;
   return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="VTA図">${g}</svg>`;
 }
+function vtaChecks(){
+  const N = S.nodes, out = [];
+  const short = n => '「' + (n.text.length > 18 ? n.text.slice(0,18) + '…' : n.text) + '」';
+  const events = N.filter(n => n.kind === 'event');
+  if (!N.length) return out;
+  if (!events.length) out.push({lv:'warn', msg:'事故事象（種別「事故事象」）の四角がありません。最終的に起きた事故を1つ置きます。'});
+  if (events.length > 1) out.push({lv:'info', msg:`事故事象が ${events.length} つあります。最終的な事故は1つにまとめるのが基本です。`});
+  const reach = new Set(events.map(n => n.id)); let grew = true;
+  while (grew){ grew = false; S.edges.forEach(e => { if (reach.has(e.to) && !reach.has(e.from)){ reach.add(e.from); grew = true; } }); }
+  N.forEach(n => {
+    if (n.kind === 'event') return;
+    const outE = S.edges.some(e => e.from === n.id), inE = S.edges.some(e => e.to === n.id);
+    if (!outE && !inE) out.push({lv:'warn', id:n.id, msg:`${short(n)} が矢印でどこにもつながっていません。`});
+    else if (!outE) out.push({lv:'warn', id:n.id, msg:`${short(n)} から先の矢印がありません。事故につながる流れに入れるか、関係がなければ削除します。`});
+    else if (events.length && !reach.has(n.id)) out.push({lv:'warn', id:n.id, msg:`${short(n)} が事故事象までつながっていません。`});
+    if (n.elim && !n.variation) out.push({lv:'warn', id:n.id, msg:`${short(n)} は排除ノードですが「いつもと違った」の印がありません。排除ノードは変動要因の中から選びます。`});
+    if (n.variation && !n.normal) out.push({lv:'info', id:n.id, msg:`${short(n)}：「ふだんはどうか」が空です。比べる基準を書くと、何が違ったのかがはっきりします。`});
+    if (/べき|不注意|注意不足|確認不足|怠|油断|ミス|悪い/.test(n.text)) out.push({lv:'warn', id:n.id, msg:`${short(n)} に評価の言葉が入っています。VTAには、起きた事実だけを書きます。`});
+    if ([...n.text].length > 40) out.push({lv:'info', id:n.id, msg:`${short(n)} は長めです。1つの四角に複数の出来事が入っていないか確かめます。`});
+  });
+  S.edges.forEach(e => { const a = nodeById(e.from), b = nodeById(e.to);
+    if (a && b && (+a.seq) > (+b.seq)) out.push({lv:'warn', id:b.id, msg:`${short(a)} → ${short(b)} の矢印が時間をさかのぼっています。順序の番号を確認します。`}); });
+  if (!N.some(n => n.elim)) out.push({lv:'warn', msg:'「なければ事故にならなかった点（排除ノード）」がまだありません。'});
+  if (!S.edges.some(e => e.brk)) out.push({lv:'info', msg:'「流れを断てた所（ブレイク）」がまだありません。誰か・何かが気づけば止められた矢印をクリックして設定します。'});
+  return out;
+}
 function nodeForm(){
   const n = nodeById(ui.sel), isNew = !n;
-  const d = n || {lane: ui.lastLane || S.lanes[0]?.id, seq: nextSeq(), time:'', kind:'act', text:'', variation:false, elim:false, note:''};
+  const d = n || {lane: ui.lastLane || S.lanes[0]?.id, seq: nextSeq(), time:'', kind:'act', text:'', normal:'', variation:false, elim:false, note:''};
   const preds = n ? S.edges.filter(e => e.to === n.id).map(e => e.from) : [];
   const others = S.nodes.filter(x => x.id !== d.id).sort((a,b) => a.seq - b.seq);
   return `
@@ -656,7 +709,8 @@ function nodeForm(){
     <label>種別<select id="f-kind">${Object.entries(KINDS).map(([k,v]) => `<option value="${k}" ${k===d.kind?'selected':''}>${v}</option>`).join('')}</select></label>
     <label>内容（「誰が・何をした」を1つだけ）<textarea id="f-text" rows="3" placeholder="${esc(TEMPLATES[S.meta.type]?.ex || '例：○○が△△した')}">${esc(d.text)}</textarea></label>
     <label class="check"><input type="checkbox" id="f-var" ${d.variation?'checked':''}><span><b>いつもと違った</b>（変動要因）<br><span class="small muted">ふだんの手順や状態と違っていた</span></span></label>
-    <label class="check"><input type="checkbox" id="f-elim" ${d.elim?'checked':''}><span><b>ここで止められた</b>（排除ノード）<br><span class="small muted">ここで流れを断てば事故にならなかった</span></span></label>
+    <label>ふだんはどうか（比べる基準）<input type="text" id="f-normal" value="${esc(d.normal)}" placeholder="例：カーブ手前で十分に減速する"></label>
+    <label class="check"><input type="checkbox" id="f-elim" ${d.elim?'checked':''}><span><b>これがなければ事故にならなかった</b>（排除ノード）<br><span class="small muted">印を付けると「いつもと違った」も付きます。図では右上に○で示します。</span></span></label>
     <fieldset><legend>この四角の原因になった四角（矢印の出発点）</legend>
       <div class="preds">${others.length ? others.map(o => `<label class="check"><input type="checkbox" class="f-pred" value="${o.id}" ${preds.includes(o.id)?'checked':''}><span><span class="mono muted">#${o.seq}</span> ${esc(laneName(o.lane))}：${esc(o.text.slice(0,22))}</span></label>`).join('') : '<span class="small muted">まだ他のノードがありません</span>'}</div>
     </fieldset>
@@ -688,16 +742,21 @@ function renderVTA(){
         <div class="legend">
           <span class="lg"><span class="sw"></span>通常の行為・状態</span>
           <span class="lg"><span class="sw var"></span>いつもと違った点（変動要因）</span>
-          <span class="lg"><span class="sw x">✕</span>ここで止められた点（排除ノード）</span>
+          <span class="lg"><span class="sw o"></span>なければ事故にならなかった点（排除ノード）</span>
+          <span class="lg"><span class="sw brk"></span>流れを断てた所（ブレイク）</span>
           <span class="lg"><span class="sw event"></span>事故事象</span>
         </div>
-        <span class="btnrow" style="align-items:center"><span class="small muted mono">${S.nodes.length} ノード ／ ${S.edges.length} 矢印</span><button class="btn sm ${ui.link ? 'primary' : ''}" data-act="link-mode">${ui.link ? 'つなぐ操作を終える' : '→ 矢印でつなぐ'}</button><button class="btn sm" data-act="lane-add">＋ 関係者・要素の欄を追加</button></span>
+        <span class="btnrow" style="align-items:center"><span class="small muted mono">${S.nodes.length} ノード ／ ${S.edges.length} 矢印</span><button class="btn sm" data-act="flip-dir" title="JAXAのハンドブックなどは下から上（最上部が事故）">時間の向き：${S.meta.dir === 'down' ? '上→下' : '下→上'}</button><button class="btn sm ${ui.link ? 'primary' : ''}" data-act="link-mode">${ui.link ? 'つなぐ操作を終える' : '→ 矢印でつなぐ'}</button><button class="btn sm" data-act="lane-add">＋ 関係者・要素の欄を追加</button></span>
       </div>
       ${ui.link ? `<div class="linkbar" role="status">${ui.linkFrom ? `<b>つなぎ先</b>（結果の側）の四角をクリックしてください。選んだ四角をもう一度クリックすると取り消せます。` : `<b>原因の側</b>の四角をクリックし、次に<b>結果の側</b>の四角をクリックすると矢印が引かれます。同じ組み合わせをもう一度選ぶと矢印を消します。`}</div>` : ''}
       <div class="canvas">${vtaSVG()}</div>
+      <div class="small muted" style="padding:8px 14px;border-top:1px solid var(--line)">矢印をクリックすると、ブレイク（そこで流れを断てた所）の印を付け外しできます。</div>
     </section>
     <aside class="card">${nodeForm()}</aside>
-  </div>`;
+  </div>
+  ${(() => { const c = vtaChecks(); return `<section class="card" style="margin-top:16px"><h3>作図チェック</h3>
+    <p class="small muted" style="margin-top:4px">VTAの基本ルールに沿っているかを自動で確かめます。項目をクリックすると、その四角を編集できます。</p>
+    <div class="checks">${c.length ? c.map(x => `<button class="${x.lv}" ${x.id ? `data-act="sel-node" data-id="${x.id}"` : 'disabled'}><span class="ic">${x.lv==='warn'?'要確認':'参考'}</span><span>${x.msg}</span></button>`).join('') : '<span class="chip ok" style="align-self:flex-start">問題は見つかりませんでした</span>'}</div></section>`; })()}`;
 }
 
 /* ---------- 3 why ---------- */
@@ -738,15 +797,16 @@ function renderWhy(){
     <aside class="targets" aria-label="分析対象">
       ${ts.length ? ts.map(t => { const c = S.whys.filter(w => w.nodeId === t.id).length;
         return `<button class="target" aria-pressed="${t.id===ui.target}" data-act="sel-target" data-id="${t.id}">
-          <span class="t-meta">${t.elim?'<span class="chip elim">✕ 止められた点</span>':''}${t.variation?'<span class="chip var">いつもと違う</span>':''}<span class="mono">#${t.seq}</span>${esc(laneName(t.lane))}</span>
+          <span class="t-meta">${t.elim?'<span class="chip elim">○ 排除ノード</span>':''}${t.variation?'<span class="chip var">いつもと違う</span>':''}<span class="mono">#${t.seq}</span>${esc(laneName(t.lane))}</span>
           <span class="t-text">${esc(t.text)}</span>
           <span class="t-meta">${c ? `なぜ ${c} 件` : '<span class="chip warn">未分析</span>'}</span></button>`; }).join('')
-        : `<div class="card small muted">VTAの画面で「いつもと違った」か「ここで止められた」の印を付けると、ここに並びます。</div>`}
+        : `<div class="card small muted">VTAの画面で「いつもと違った」か「排除ノード」の印を付けると、ここに並びます。</div>`}
     </aside>
     <section class="card">
       ${n ? `<div class="focus-node">
           <span class="t-meta small muted">${esc(laneName(n.lane))} ／ ${KINDS[n.kind]} ／ #${n.seq} ${esc(n.time)}</span>
           <div class="q">${esc(n.text)}　──なぜ？</div>
+          ${n.normal ? `<span class="small muted">ふだんは：${esc(n.normal)}</span>` : ''}
         </div>
         <ol class="tree">${roots.map(w => whyItem(w, 1)).join('')}</ol>
         <div style="margin-top:14px"><button class="btn primary" data-act="why-root">＋ 直接の要因を追加</button></div>
@@ -909,9 +969,12 @@ function reportText(){
   line('天候・場所の状態', [m.weather, m.road].filter(Boolean).join('／')); line('概要', m.summary); line('被害', m.damage);
   out.push('', '2 事故に至る経過（VTA）');
   [...S.nodes].sort((a,b) => a.seq - b.seq).forEach(n => {
-    const tag = [n.variation?'いつもと違った点':'', n.elim?'ここで止められた点':''].filter(Boolean).join('・');
+    const tag = [n.variation?'変動要因':'', n.elim?'排除ノード':''].filter(Boolean).join('・');
     out.push(`  #${n.seq}${n.time?' '+n.time:''}［${laneName(n.lane)}］${n.text}${tag?'　◀'+tag:''}`);
+    if (n.variation && n.normal) out.push(`      （ふだんは：${n.normal}）`);
   });
+  const bk = S.edges.filter(e => e.brk && nodeById(e.from) && nodeById(e.to));
+  if (bk.length){ out.push('  ブレイク（流れを断てた所）'); bk.forEach(e => out.push(`    ${nodeById(e.from).text} → ${nodeById(e.to).text}`)); }
   out.push('', '3 背後要因の分析（なぜなぜ分析）');
   targets().forEach(n => {
     const roots = S.whys.filter(w => w.nodeId === n.id && !w.parentId); if (!roots.length) return;
@@ -953,15 +1016,17 @@ function renderGuide(){
       <div class="tablewrap"><table class="terms"><thead><tr><th>画面での呼び方</th><th>専門用語</th></tr></thead><tbody>
         <tr><td>出来事を時間順に並べる</td><td>VTA（バリエーションツリー分析）</td></tr>
         <tr><td>いつもと違った点</td><td>変動要因</td></tr>
-        <tr><td>ここで止められた点</td><td>排除ノード</td></tr>
+        <tr><td>なければ事故にならなかった点（○）</td><td>排除ノード</td></tr>
+        <tr><td>流れを断てた所（破線）</td><td>ブレイク</td></tr>
         <tr><td>6つの観点</td><td>m-SHELLモデル</td></tr>
         <tr><td>エラーの種類</td><td>スリップ・ラプス・ミステイク・違反（Reason）</td></tr>
         <tr><td>対策の候補・発想</td><td>エラー対策の発想手順（河野）</td></tr>
       </tbody></table></div></article>
     <article class="card"><h3>VTA（Variation Tree Analysis）</h3>
       <p>事故に至る経過を、関係者・要素ごとに時系列で並べた樹形図です。通常の作業から外れた「変動」が連鎖して事故に至ったと考え、その連鎖をどこで断てたかを探します。</p>
-      <ol><li>行為者・要素を横に並べる（機関員、指揮者、車両、環境、組織など）</li><li>行為・判断・状態を時間順に置き、因果を矢印でつなぐ</li><li>通常と違った点を変動要因とし、太枠で示す</li><li>連鎖を断てば事故に至らなかった点を排除ノードとし、✕で示す</li><li>排除ノードごとに背後要因を分析する</li></ol>
-      <p class="src">Leplat & Rasmussen (1984)。国内では石橋明らが航空・鉄道分野で普及。</p></article>
+      <ol><li>関係者・要素を横に並べ、縦を時間軸にする（JAXAの手引きでは下から上へ時間が進み、最上部が事故）</li><li>事故に至るまでの行為・判断・状態を、事実だけで1つずつ四角に書き、時間順に置いて矢印でつなぐ</li><li>ふだん（規則・手順・慣例）と違った点を変動要因とし、太枠で示す</li><li>それがなければ事故に至らなかった変動要因を排除ノードとし、右肩に○を付ける</li><li>誰か・何かが気づけば連鎖を断てた所をブレイクとし、矢印に破線を引く</li><li>排除ノードごとに背後要因を分析する（なぜなぜ分析）</li></ol>
+      <p>記号の細部（○や破線の位置、時間の向き）は資料や組織によって違います。所属の様式があれば、それに合わせてください。</p>
+      <p class="src">Leplat & Rasmussen (1984)。JAXA「ヒューマンファクタ分析ハンドブック」(JERG-0-018A)、日本財団「ヒューマンファクター概念に基づく海難・危険情報の調査活用等に関する調査研究」ほか。</p></article>
     <article class="card"><h3>なぜなぜ分析の約束ごと</h3>
       <ul><li>事実から出発し、推測には推測と書く</li><li>「注意不足」「確認不足」で止めない。なぜ注意が向かなかったのかを問う</li><li>個人の資質で終わらせず、規則・教育・装備・体制まで掘り下げる</li><li>要因が複数あれば枝分かれさせる</li><li>根本要因から「だから」で逆に読み、論理がつながるか確かめる</li><li>対策が打てる単位まで来たら止める</li></ul></article>
     <article class="card"><h3>m-SHELLモデル</h3>
@@ -1017,6 +1082,8 @@ document.addEventListener('click', e => {
         ui.linkFrom = null; save(); render(); break;
       }
       ui.sel = id; render(); break;
+    case 'toggle-brk': { const e = S.edges.find(x => x.from === a.dataset.from && x.to === a.dataset.to); if (!e) return; e.brk = !e.brk; save(); render(); toast(e.brk ? 'ブレイク（流れを断てた所）を付けました' : 'ブレイクを外しました'); break; }
+    case 'flip-dir': S.meta.dir = S.meta.dir === 'down' ? 'up' : 'down'; save(); render(); break;
     case 'link-mode': ui.link = !ui.link; ui.linkFrom = null; render(); break;
     case 'new-node': ui.sel = null; render(); $('#f-text')?.focus(); break;
     case 'save-node': {
@@ -1024,9 +1091,10 @@ document.addEventListener('click', e => {
       if (!text){ toast('内容を入力してください'); $('#f-text').focus(); return; }
       let n = nodeById(ui.sel);
       if (!n){ n = {id:uid('n')}; S.nodes.push(n); }
-      Object.assign(n, {lane:$('#f-lane').value, seq:+$('#f-seq').value || 0, time:$('#f-time').value.trim(), kind:$('#f-kind').value, text, variation:$('#f-var').checked, elim:$('#f-elim').checked, note:$('#f-note').value});
+      Object.assign(n, {lane:$('#f-lane').value, seq:+$('#f-seq').value || 0, time:$('#f-time').value.trim(), kind:$('#f-kind').value, text, normal:$('#f-normal').value.trim(), variation:$('#f-var').checked || $('#f-elim').checked, elim:$('#f-elim').checked, note:$('#f-note').value});
       const preds = [...document.querySelectorAll('.f-pred:checked')].map(x => x.value);
-      S.edges = S.edges.filter(x => x.to !== n.id).concat(preds.map(p => ({from:p, to:n.id})));
+      const old = S.edges.filter(x => x.to === n.id);
+      S.edges = S.edges.filter(x => x.to !== n.id).concat(preds.map(p => ({from:p, to:n.id, brk:!!old.find(o => o.from === p)?.brk})));
       ui.lastLane = n.lane;
       const wasNew = ui.sel !== n.id; ui.sel = wasNew ? null : n.id;
       save(); render(); toast(wasNew ? 'ノードを追加しました' : 'ノードを更新しました');
@@ -1079,7 +1147,7 @@ document.addEventListener('click', e => {
       break; }
     case 'open-new': { $('#tpl-grid').innerHTML = Object.entries(TEMPLATES).map(([k,t]) => `<button class="tpl" data-act="start-new" data-id="${k}"><b>${t.label}</b><span>${t.sub}</span></button>`).join(''); const d = $('#dlg-new'); d.showModal ? d.showModal() : d.setAttribute('open',''); break; }
     case 'start-new': S = blank(id); ui.sel = null; ui.target = null; closeDialogs(); save(); setTab('overview'); toast(`「${TEMPLATES[id].label}」で新しい分析を始めました`); break;
-    case 'load-sample': S = id === 'office' ? sampleOffice() : sample(); ui.sel = null; ui.target = null; closeDialogs(); save(); setTab('vta'); toast('記入例を読み込みました'); break;
+    case 'load-sample': S = withExtras(id === 'office' ? sampleOffice() : sample()); ui.sel = null; ui.target = null; closeDialogs(); save(); setTab('vta'); toast('記入例を読み込みました'); break;
     case 'confirm-yes': { const fn = ui.confirm; ui.confirm = null; closeDialogs(); fn && fn(); break; }
     case 'close-dlg': closeDialogs(); break;
   }
