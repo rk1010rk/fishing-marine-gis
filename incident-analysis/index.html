@@ -665,8 +665,8 @@ function nodeForm(){
       ${isNew?'':`<button class="btn danger" data-act="del-node">削除</button><button class="btn ghost" data-act="goto-why" data-id="${n.id}">なぜなぜへ →</button>`}
     </div>
   </div>
-  <details style="margin-top:18px">
-    <summary>欄（レーン）の名前・並びを変える</summary>
+  <details style="margin-top:18px" ${ui.laneOpen ? 'open' : ''}>
+    <summary>関係者・要素の欄（レーン）を追加・名前変更・並べ替え</summary>
     <div class="form" style="margin-top:10px">
       ${S.lanes.map((l,i) => `<div class="ms-top"><input type="text" id="lane-${l.id}" data-lane="${l.id}" value="${esc(l.name)}" aria-label="レーン名">
         <button class="btn ghost sm" data-act="lane-move" data-id="${l.id}" data-dir="-1" ${i?'':'disabled'} aria-label="左へ">←</button>
@@ -690,7 +690,7 @@ function renderVTA(){
           <span class="lg"><span class="sw x">✕</span>ここで止められた点（排除ノード）</span>
           <span class="lg"><span class="sw event"></span>事故事象</span>
         </div>
-        <span class="small muted mono">${S.nodes.length} ノード ／ ${S.edges.length} 矢印</span>
+        <span class="btnrow" style="align-items:center"><span class="small muted mono">${S.nodes.length} ノード ／ ${S.edges.length} 矢印</span><button class="btn sm" data-act="lane-add">＋ 関係者・要素の欄を追加</button></span>
       </div>
       <div class="canvas">${vtaSVG()}</div>
     </section>
@@ -1030,7 +1030,7 @@ document.addEventListener('click', e => {
         ui.sel = null; save(); render(); toast('ノードを削除しました');
       }); break; }
     case 'goto-why': ui.target = id; setTab('why'); break;
-    case 'lane-add': S.lanes.push({id:uid('l'), name:'新しいレーン'}); save(); render(); break;
+    case 'lane-add': { const l = {id:uid('l'), name:'新しい関係者'}; S.lanes.push(l); ui.laneOpen = true; save(); render(); const inp = $('#lane-'+l.id); if (inp){ inp.focus(); inp.select(); } toast('欄を追加しました。右のパネルで名前を変えてください'); break; }
     case 'lane-move': { const i = S.lanes.findIndex(l => l.id === id), j = i + (+a.dataset.dir); if (j < 0 || j >= S.lanes.length) return; [S.lanes[i], S.lanes[j]] = [S.lanes[j], S.lanes[i]]; save(); render(); break; }
     case 'lane-del': if (S.nodes.some(n => n.lane === id)){ toast('このレーンにはノードがあります。先にノードを移すか削除してください'); return; } S.lanes = S.lanes.filter(l => l.id !== id); save(); render(); break;
     case 'sel-target': ui.target = id; render(); break;
