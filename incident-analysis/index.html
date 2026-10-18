@@ -341,17 +341,17 @@ dialog textarea{font-family:var(--f-mono);font-size:12px}
 const KEY = 'hf-vta-why-v1';
 const SHELL = {
   L:  {label:'本人',         term:'L',   name:'本人（L）',            desc:'当事者の体調・知識・技能・判断',
-       q:['その時の体調・疲れ・眠気・焦りはどうだったか','この作業や状況の経験・知識は十分だったか','何を見て、どう判断したか。その判断はその時なぜ自然に思えたか','いつものやり方と違う点はあったか']},
+       q:['その時の体調・疲れ・眠気・焦りはどうだったか','この作業や状況の経験・知識は十分だったか','その時、本人には状況がどう見えていたか（何を知っていて、何を知らなかったか）','その判断は、その時その人にとってなぜ筋が通っていたか','いつものやり方と違う点はあったか']},
   LL: {label:'周りの人',     term:'L-L', name:'周りの人（L-L）',      desc:'指示・連携・声かけ・職場の雰囲気',
        q:['周りの誰かが気づける状況だったか','指示や情報は正しく伝わっていたか','声をかけにくい雰囲気や上下関係はなかったか','役割分担ははっきりしていたか']},
   S:  {label:'決まり・手順・教育', term:'S', name:'決まり・手順・教育（S）', desc:'規則・マニュアル・手順・訓練の内容',
-       q:['この場面の手順やルールはあったか','そのルールは現場で守れる内容だったか','教育や訓練で教わっていたか','表示・マニュアルはわかりやすかったか']},
+       q:['この場面の手順やルールはあったか','決まり上のやり方と、現場で実際にやっているやり方は同じか','そのルールは現場で守れる内容だったか','教育や訓練で教わっていたか','表示・マニュアルはわかりやすかったか']},
   H:  {label:'道具・機械・設備', term:'H', name:'道具・機械・設備（H）', desc:'車両・装備・機器・システムの設計や状態',
        q:['道具・機械は使いやすい設計だったか','表示や警告はわかりやすかったか','点検・整備・更新は適切だったか','慣れていない新しい機材ではなかったか']},
   E:  {label:'環境',         term:'E',   name:'環境（E）',            desc:'天候・明るさ・場所・時間帯・騒音',
        q:['天候・明るさ・騒音・暑さ寒さはどうだったか','場所の形状や足場、配置に危険はなかったか','時間帯や時間の切迫はあったか','作業スペースは十分だったか']},
   m:  {label:'組織・管理',   term:'m',   name:'組織・管理（m）',      desc:'人員・時間・予算の配分、体制、安全文化',
-       q:['人手・時間・予算は足りていたか','似た出来事は前にもなかったか。共有されていたか','責任部署や基準は決まっていたか','ヒヤリハットを報告しやすい職場だったか']}
+       q:['人手・時間・予算は足りていたか','似た出来事は前にもなかったか。共有されていたか','責任部署や基準は決まっていたか','安全を確かめる立場（指揮者・管理部門・メーカーなど）は、それぞれ何を把握し、どう働きかけていたか','ヒヤリハットを報告しやすい職場だったか']}
 };
 const ERR = {
   '':        'エラーの型：未選択',
@@ -359,12 +359,12 @@ const ERR = {
   lapse:     'やるべきことが抜けた・忘れた（ラプス）',
   mistakeR:  'ルールや経験の当てはめを誤った（規則ベースのミステイク）',
   mistakeK:  '知識・経験がなく判断を誤った（知識ベースのミステイク）',
-  violation: '決まりから外れた（違反・種類は未特定）',
-  vRoutine:  'ふだんから決まりを外すのが当たり前だった（日常的違反）',
-  vSituational:'その場の状況で、決まりを守るのが難しかった（状況的違反）',
-  vExceptional:'想定外の事態で、やむを得ず決まりを外した（例外的違反）'
+  violation: '決まりから外れた（逸脱・種類は未特定）',
+  vRoutine:  'ふだんから決まりを外すのが当たり前だった（日常的な逸脱）',
+  vSituational:'その場の状況で、決まりを守るのが難しかった（状況的な逸脱）',
+  vExceptional:'想定外の事態で、やむを得ず決まりを外した（例外的な逸脱）'
 };
-const ERR_SHORT = {slip:'スリップ', lapse:'ラプス', mistakeR:'ミステイク（規則）', mistakeK:'ミステイク（知識）', violation:'違反（未特定）', vRoutine:'違反（日常的）', vSituational:'違反（状況的）', vExceptional:'違反（例外的）'};
+const ERR_SHORT = {slip:'スリップ', lapse:'ラプス', mistakeR:'ミステイク（規則）', mistakeK:'ミステイク（知識）', violation:'逸脱（未特定）', vRoutine:'逸脱（日常的）', vSituational:'逸脱（状況的）', vExceptional:'逸脱（例外的）'};
 /* Rasmussen の SRK。VTA の行為・判断ノードに付ける */
 const SRK = {'':'未選択（状態・事故事象では不要）', skill:'慣れで自然に体が動いた（技能ベース）', rule:'手順や経験に当てはめた（規則ベース）', knowledge:'その場で考えて判断した（知識ベース）'};
 const TEMPLATES = {
@@ -412,6 +412,10 @@ const LEVELS = [
 ];
 const STRENGTH = {3:'強', 2:'中', 1:'弱'};
 const LEGACY_LEVEL = {elim:'remove', eng:'system', adm:'policy'};
+/* DoD HFACS 8.0 の4階層＋組織の外（SEIPS の外部環境） */
+const TIERS = {act:'行為（当事者の行動・判断）', pre:'前提条件（心身の状態・環境・チームの連携）', sup:'監督（指揮・監督・計画）', org:'組織の影響（方針・資源・手順・風土）', ext:'組織の外（法令・基準・メーカー・社会）'};
+const TIER_GUESS = {L:'pre', LL:'pre', H:'pre', E:'pre', S:'org', m:'org'};
+const tierOf = w => w.tier || TIER_GUESS[w.shell] || 'pre';
 const levelOf = id => LEVELS.find(l => l.id === (LEGACY_LEVEL[id] || id)) || LEVELS[LEVELS.length-1];
 const KINDS = {act:'行為', judge:'判断', state:'状態', event:'事故事象'};
 const BLAME = /注意不足|不注意|確認不足|気を?付け|意識が低|意識不足|怠|うっかり|油断|慢心|たるみ|自覚が|認識不足|ミスした|徹底/;
@@ -522,11 +526,23 @@ const SAMPLE_NORMAL = {
   n7:'車両指揮者が速度や危険箇所を機関員に助言する', n8:'カーブ手前で十分に減速して進入する', n9:'下りの右カーブは30km/h程度で進入する', n11:'緩やかな操作で姿勢を立て直す',
   a1:'送信前に宛先と添付を別の職員が確認する', a2:'通知は日中に分散して処理する', a4:'同じ名字の候補は所属や住所で区別できる', a5:'宛先をアドレスで照合してから送信する', a6:'確認者が送信前に宛先と添付を確認する'
 };
+const SAMPLE_ACTUAL = {
+  n7:'出場途上の指揮者は、無線と地図の確認で手一杯になることが多い', n8:'多くの機関員が、新型車も旧型車と同じ感覚で運転している', n9:'カーブの進入速度は各自の経験で決めている',
+  a5:'忙しい時は、候補の一番上をそのまま選ぶことが多い', a6:'確認者が不在のときは、確認を省いて送っている'
+};
+const SAMPLE_GORIGHT = {
+  vehicle:['経験の長い機関員は、満水時は早めに減速する独自の工夫をしている','一部の署では、出場途上に隊員が地図を読み上げ、指揮者の負担を減らしている'],
+  office:['同じ名字の申請者がいるとき、ベテラン職員は住所で照合している']
+};
 const SAMPLE_BRK = ['n8>n9','n7>n9','a5>a7'];
 function withExtras(d){
   d.meta.dir = 'up';
   d.nodes.forEach(n => n.normal = SAMPLE_NORMAL[n.id] || '');
   d.edges.forEach(e => { if (SAMPLE_BRK.includes(e.from + '>' + e.to)) e.brk = true; });
+  d.nodes.forEach(n => n.actual = SAMPLE_ACTUAL[n.id] || '');
+  d.goright = (SAMPLE_GORIGHT[d.meta.type] || []).map((text,i) => ({id:'g'+i, text}));
+  if (d.meta.type === 'vehicle') d.meta.care = '負傷した隊員2名と機関員に面談と惨事ストレスケアを行う。機関員を処分の対象とせず、分析に参加してもらう。';
+  d.measures.forEach(m => { if (m.id === 'm1'){ m.check = '2027年3月時点で全機関員の慣熟訓練受講率100%'; m.checker = '安全管理担当'; } if (m.id === 'c1'){ m.check = '導入後3か月の誤送信件数（0件を目標）'; m.checker = '情報システム担当'; } });
   return d;
 }
 function blank(type){
@@ -611,7 +627,7 @@ function shellChip(k, fill){ return k ? `<span class="chip ${fill?'fill':''}" da
 
 /* ---------- shell ---------- */
 const HOWTO = {
-  overview:['起きたことを、事実だけで書きます。「〜すべきだった」などの評価は書きません。','誰の責任かではなく、なぜ起きたかを明らかにするのが目的です。'],
+  overview:['起きたことを、事実だけで書きます。「〜すべきだった」などの評価は書きません。','書面だけに頼らず、当事者や関係者から直接話を聞き、分析にも加わってもらいます。','誰の責任かではなく、なぜ起きたかを明らかにするのが目的です。'],
   vta:() => [`図の空いたマス（関係者の列×時点の行）をクリックすると、その場所に四角を追加できます。まず「事故の瞬間」を置きます（図では事故が${S.meta.dir === 'down' ? '一番下' : '一番上'}に来ます）。`,'四角はドラッグで別の列や時点へ動かせます。四角にマウスを乗せると出る●を、結果の側の四角までドラッグすると矢印が引けます。','ふだんと違った点に「いつもと違った」、なければ事故にならなかった点に「排除ノード」の印を付けます。誰か・何かが気づけば流れを断てた矢印はクリックして「ブレイク」にします。','操作を間違えたら「↶ 元に戻す」（Ctrl+Z）。下の「作図チェック」も確かめてください。'],
   why:['左の一覧から排除ノード（○）とブレイク（┄）を選び、「なぜ？」を繰り返します。ブレイクでは「なぜ流れを断てなかったか」を考えます。','1つの欄には1つの事柄を、誰が読んでも同じ意味になる具体的な言葉で書きます。要因が複数あれば「並列の要因」で漏れなく挙げます。','現場・現物・記録で確かめたものは「事実」、まだのものは「推測」にします。','根本要因から「だから」で逆に読み、話がつながるか確かめます。「注意する」以外の対策が打てるところまで掘り下げます。'],
   factors:['この画面は自動で集計されます。入力は不要です。','要因が「本人」に偏っていたら、決まり・道具・組織の側に見落としがないか見直します。'],
@@ -667,6 +683,11 @@ function renderOverview(){
         ${steps.map((s,i) => `<div class="step ${s.done?'done':''}"><span class="dot">${s.done?'✓':i+1}</span><div><div class="st">${s.t}</div><div class="small muted">${s.d}</div></div><button class="btn sm" data-act="tab" data-id="${s.tab}">開く</button></div>`).join('')}
       </div>
       <div style="margin-top:14px" class="note">この分析の目的は再発防止です。個人の責任追及ではなく、「なぜその行動が、その時その人にとって合理的に見えたのか」を明らかにします（公正な文化 / Just Culture）。</div>
+      <div class="form" style="margin-top:16px">
+        <h3>関係者への配慮</h3>
+        <p class="small muted">修復的な公正な文化（Restorative Just Culture）の3つの問いです。誰が傷ついたか、その人たちに何が必要か、それを満たすのは誰の役目か。当事者の隊員・職員も含めて考えます。</p>
+        <label>配慮・支援の内容<textarea id="meta-care" data-meta="care" rows="3" placeholder="例：負傷した隊員と機関員への面談と心理的支援。機関員にも分析に参加してもらう">${esc(S.meta.care)}</textarea></label>
+      </div>
     </section>
   </div>`;
 }
@@ -734,7 +755,7 @@ function vtaSVG(){
     const cls = ['node', n.kind==='event'?'event':'', n.variation?'var':'', (ui.link ? ui.linkFrom===n.id : ui.sel===n.id)?'sel':''].join(' ');
     const lines = wrapText(n.text || '（内容未入力）', 11, 3);
     g += `<g class="${cls}" data-act="sel-node" data-id="${n.id}" data-x="${p.x}" data-y="${p.y}" transform="translate(${p.x},${p.y})" tabindex="0" role="button" aria-label="${esc(KINDS[n.kind]+'：'+n.text)}">
-      <title>${esc(n.text)}${n.normal ? '\nふだんは：' + esc(n.normal) : ''}</title>
+      <title>${esc(n.text)}${n.normal ? '\n決まり・想定では：' + esc(n.normal) : ''}${n.actual ? '\n現場で実際は：' + esc(n.actual) : ''}</title>
       <rect class="n-box" width="${BW}" height="${BH}" rx="${n.variation?18:5}"/>
       <text class="n-kind" x="11" y="17">${KINDS[n.kind]}${n.variation?'・変動':''}</text>
       ${lines.map((t,i) => `<text class="n-text" x="11" y="${37+i*15.5}">${esc(t)}</text>`).join('')}
@@ -761,7 +782,7 @@ function vtaChecks(){
     else if (events.length && !reach.has(n.id)) out.push({lv:'warn', id:n.id, msg:`${short(n)} が事故事象までつながっていません。`});
     if (n.elim && !n.variation) out.push({lv:'warn', id:n.id, msg:`${short(n)} は排除ノードですが「いつもと違った」の印がありません。排除ノードは変動要因の中から選びます。`});
     if (n.elim && (n.kind === 'act' || n.kind === 'judge') && !n.srk) out.push({lv:'info', id:n.id, msg:`${short(n)}：行為・判断のレベル（SRK）が未選択です。原典のVTAは、これで「変えやすい判断」を見極めます。`});
-    if (n.variation && !n.normal) out.push({lv:'info', id:n.id, msg:`${short(n)}：「ふだんはどうか」が空です。比べる基準を書くと、何が違ったのかがはっきりします。`});
+    if (n.variation && !n.normal) out.push({lv:'info', id:n.id, msg:`${short(n)}：「決まり・想定ではどうか」が空です。比べる基準を書くと、何が違ったのかがはっきりします。`});
     if (/べき|不注意|注意不足|確認不足|怠|油断|ミス|悪い/.test(n.text)) out.push({lv:'warn', id:n.id, msg:`${short(n)} に評価の言葉が入っています。VTAには、起きた事実だけを書きます。`});
     if ([...n.text].length > 40) out.push({lv:'info', id:n.id, msg:`${short(n)} は長めです。1つの四角に複数の出来事が入っていないか確かめます。`});
   });
@@ -790,7 +811,8 @@ function nodeForm(){
     <label>行為・判断のレベル（SRK）<select id="f-srk">${Object.entries(SRK).map(([k,v]) => `<option value="${k}" ${k===(d.srk||'')?'selected':''}>${v}</option>`).join('')}</select></label>
     <label>内容（「誰が・何をした」を1つだけ）<textarea id="f-text" rows="3" placeholder="${esc(TEMPLATES[S.meta.type]?.ex || '例：○○が△△した')}">${esc(d.text)}</textarea></label>
     <label class="check"><input type="checkbox" id="f-var" ${d.variation?'checked':''}><span><b>いつもと違った</b>（変動要因）<br><span class="small muted">ふだんの手順や状態と違っていた</span></span></label>
-    <label>ふだんはどうか（比べる基準）<input type="text" id="f-normal" value="${esc(d.normal)}" placeholder="例：カーブ手前で十分に減速する"></label>
+    <label>決まり・想定ではどうか（Work-as-imagined）<input type="text" id="f-normal" value="${esc(d.normal)}" placeholder="例：カーブ手前で十分に減速する"></label>
+    <label>現場で実際はどうしているか（Work-as-done）<input type="text" id="f-actual" value="${esc(d.actual)}" placeholder="例：各自の経験で速度を決めている"></label>
     <label class="check"><input type="checkbox" id="f-elim" ${d.elim?'checked':''}><span><b>これがなければ事故にならなかった</b>（排除ノード）<br><span class="small muted">印を付けると「いつもと違った」も付きます。図では右上に○で示します。</span></span></label>
     <fieldset><legend>この四角の原因になった四角（矢印の出発点）</legend>
       <div class="preds">${others.length ? others.map(o => `<label class="check"><input type="checkbox" class="f-pred" value="${o.id}" ${preds.includes(o.id)?'checked':''}><span><span class="mono muted">#${o.seq}</span> ${esc(laneName(o.lane))}：${esc(o.text.slice(0,22))}</span></label>`).join('') : '<span class="small muted">まだ他のノードがありません</span>'}</div>
@@ -889,14 +911,14 @@ function renderWhy(){
       ${n ? `<div class="focus-node">
           <span class="t-meta small muted">${esc(laneName(n.lane))} ／ ${n.isBrk ? 'ブレイク（流れを断てた所）' : KINDS[n.kind]} ／ #${n.seq} ${esc(n.time)}</span>
           <div class="q">${esc(n.text)}　──${n.isBrk ? 'なぜ止められなかった？' : 'なぜ？'}</div>
-          ${n.normal ? `<span class="small muted">ふだんは：${esc(n.normal)}</span>` : ''}
+          ${n.normal ? `<span class="small muted">決まり・想定では：${esc(n.normal)}</span>` : ''}${n.actual ? `<span class="small muted">現場で実際は：${esc(n.actual)}</span>` : ''}
         </div>
         <ol class="tree">${roots.map(w => whyItem(w, 1)).join('')}</ol>
         <div style="margin-top:14px" class="btnrow"><button class="btn primary" data-act="why-root">＋ 直接の要因を追加</button><span class="small muted" style="align-self:center">最初の「なぜ」は、この出来事を直接引き起こした要因から書きます。</span></div>
         <details class="hints" ${roots.length ? '' : 'open'}><summary>要因を見つける質問（観点ごとに要因を追加できます）</summary>
           <div class="hint-grid">${Object.entries(SHELL).map(([k,v]) => `<div class="hint" data-shell="${k}"><b>${v.name}</b><ul>${v.q.map(q => `<li>${q}</li>`).join('')}</ul><button class="btn sm" data-act="why-root" data-shell="${k}">この観点で要因を追加</button></div>`).join('')}</div>
           <div class="errguide"><b>エラーの種類の見分け方</b>（本人・周りの人の要因に付けます）
-            <ol><li>決まりや手順を知っていて外れた → <b>違反</b>（ふだんから当たり前＝日常的／その場で守れなかった＝状況的／想定外でやむを得ず＝例外的）</li>
+            <ol><li>決まりや手順を知っていて外れた → <b>逸脱</b>（ふだんから当たり前＝日常的／その場で守れなかった＝状況的／想定外でやむを得ず＝例外的）</li>
             <li>やろうとしたこと自体が間違っていた → <b>ミステイク</b>（経験やルールの当てはめ違いなら規則ベース、知識がなかったなら知識ベース）</li>
             <li>やろうとしたことは正しかったが、動作を誤った → <b>スリップ</b></li>
             <li>やろうとしたことは正しかったが、抜けた・忘れた → <b>ラプス</b></li></ol></div>
@@ -964,6 +986,7 @@ function swiss(rc){
   return `<svg viewBox="0 0 ${endX+20} ${top+h+62}" width="${endX+20}" role="img" aria-label="スイスチーズモデル">${g}</svg>`;
 }
 function renderFactors(){
+  S.goright = S.goright || [];
   const all = {}, rc = {}, errs = {};
   S.whys.forEach(w => { all[w.shell] = (all[w.shell]||0)+1; if (w.err) errs[w.err] = (errs[w.err]||0)+1; });
   const lv = leaves(); lv.forEach(w => rc[w.shell] = (rc[w.shell]||0)+1);
@@ -992,11 +1015,20 @@ function renderFactors(){
   </div>
   <section class="card" style="margin-top:16px"><h3>スイスチーズモデル（根本要因の分布）</h3><p class="small muted" style="margin:4px 0 10px">組織・規則・装備・環境の穴（潜在的な条件）が重なったところに、当事者の行為（即発的エラー）が加わって事故に至ります。</p><div class="figure">${swiss(rc)}</div></section>
   <section class="card" style="margin-top:16px"><h3>根本要因の一覧</h3>
-    <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th>分類</th><th>根本要因</th><th>由来のノード</th><th>対策</th></tr></thead><tbody>
+    <p class="small muted" style="margin-top:4px">「階層」は米国国防総省の HFACS 8.0 に沿った分け方です。観点から自動で入るので、違えば選び直してください。</p>
+    <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th>観点</th><th>根本要因</th><th>階層（HFACS）</th><th>由来</th><th>対策</th></tr></thead><tbody>
     ${lv.length ? lv.map(w => { const n = targetById(w.nodeId), c = S.measures.filter(m => m.whyId === w.id).length;
-      return `<tr><td>${shellChip(w.shell)}</td><td>${esc(w.text)}</td><td class="small muted">${esc(n?.text||'')}</td><td>${c?`<span class="chip ok">${c} 件</span>`:'<span class="chip warn">未設定</span>'}</td></tr>`; }).join('')
-      : '<tr><td colspan="4" class="muted">まだ根本要因がありません。</td></tr>'}
-    </tbody></table></div></section>`;
+      return `<tr><td>${shellChip(w.shell)}</td><td>${esc(w.text)}</td><td><select id="wt-tier-${w.id}" data-why="${w.id}" data-field="tier" aria-label="階層">${Object.entries(TIERS).map(([k,v]) => `<option value="${k}" ${k===tierOf(w)?'selected':''}>${v}</option>`).join('')}</select></td><td class="small muted">${esc(n?.text||'')}</td><td>${c?`<span class="chip ok">${c} 件</span>`:'<span class="chip warn">未設定</span>'}</td></tr>`; }).join('')
+      : '<tr><td colspan="5" class="muted">まだ根本要因がありません。</td></tr>'}
+    </tbody></table></div>
+    ${lv.length ? `<div class="bars" style="margin-top:14px">${Object.entries(TIERS).map(([k,v]) => { const c = lv.filter(w => tierOf(w) === k).length; return `<div class="bar"><span>${v.split('（')[0]}</span><span class="track"><span class="fillb" style="display:block;width:${c/lv.length*100}%;background:var(--c-m)"></span></span><span class="n">${c}</span></div>`; }).join('')}</div>` : ''}
+    ${lv.length && !lv.some(w => ['sup','org','ext'].includes(tierOf(w))) ? '<div class="lint" style="margin-top:10px">根本要因が「行為」と「前提条件」の層だけです。HFACS 8.0 は、監督と組織の影響の層まで調べることを求めています。</div>' : ''}
+  </section>
+  <section class="card" style="margin-top:16px"><h3>ふだんうまくいっている理由（Safety-II）</h3>
+    <p class="small muted" style="margin-top:4px">同じ作業が、ふだんはなぜ事故にならずに済んでいるのかを書きます。現場の工夫や調整を見つけ、対策でそれを支えます（EUROCONTROL「Safety-I から Safety-II へ」）。</p>
+    <div class="form" style="margin-top:10px">${S.goright.map(g => `<div class="ms-top"><input type="text" id="gr-${g.id}" data-gr="${g.id}" value="${esc(g.text)}" placeholder="例：経験の長い機関員は、満水時は早めに減速している" aria-label="うまくいっている理由"><button class="btn ghost sm" data-act="gr-del" data-id="${g.id}" aria-label="削除">✕</button></div>`).join('')}
+      <div><button class="btn sm" data-act="gr-add">＋ うまくいっている理由を追加</button></div></div>
+  </section>`;
 }
 
 /* ---------- 5 measures ---------- */
@@ -1037,6 +1069,7 @@ function measureRow(m){
       <label>担当<input type="text" id="ms-owner-${m.id}" data-ms="${m.id}" data-field="owner" value="${esc(m.owner)}"></label>
       <label>期限<input type="month" id="ms-due-${m.id}" data-ms="${m.id}" data-field="due" value="${esc(m.due)}"></label>
     </div>
+    <div class="row2"><label>効果の確かめ方（何を・いつ・どの水準で）<input type="text" id="ms-check-${m.id}" data-ms="${m.id}" data-field="check" value="${esc(m.check)}" placeholder="例：2027年3月に全機関員の受講率100%を確認"></label><label>確かめる人<input type="text" id="ms-checker-${m.id}" data-ms="${m.id}" data-field="checker" value="${esc(m.checker)}" placeholder="例：安全管理担当"></label></div>
     ${levelOf(m.level).id==='att' ? '<div class="lint">注意喚起だけの対策は、時間とともに効果が薄れます。強い・中程度の対策と組み合わせてください。</div>' : ''}
   </div>`;
 }
@@ -1053,6 +1086,7 @@ function renderMeasures(){
     <section class="card"><h3>発想手順の使われ方</h3><p class="small muted" style="margin:4px 0 10px">1〜8は発生を防ぐ対策、9〜11は起きても被害を広げない対策です。両方がそろっているか確かめます。</p>
       <div class="kono"><span class="g">発生防止</span>${KONO.slice(0,8).map((k,i) => konoCell(k,i)).join('')}<span class="g">拡大防止</span>${KONO.slice(8).map((k,i) => konoCell(k,i+8)).join('')}</div></section>
   </div>
+  ${S.measures.some(m => !m.check) ? `<div class="lint" style="margin-top:16px">効果の確かめ方が未設定の対策が ${S.measures.filter(m => !m.check).length} 件あります。RCA² は、対策ごとに「何を・いつ・どの水準で」測るかと、確かめる人を決めるよう求めています。</div>` : ''}
   ${S.measures.length && !S.measures.some(m => levelOf(m.level).s >= 2) ? '<div class="lint" style="margin-top:16px">対策がすべて「弱い対策」です。RCA²（米国IHI）は、対策のうち少なくとも1つを「中」以上の強さにするよう求めています。</div>' : ''}
   <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px">
   ${lv.length ? lv.map(w => { const ms = S.measures.filter(m => m.whyId === w.id), n = targetById(w.nodeId);
@@ -1080,7 +1114,8 @@ function reportText(){
   [...S.nodes].sort((a,b) => a.seq - b.seq).forEach(n => {
     const tag = [n.variation?'変動要因':'', n.elim?'排除ノード':''].filter(Boolean).join('・');
     out.push(`  #${n.seq}${n.time?' '+n.time:''}［${laneName(n.lane)}］${n.text}${n.srk?'〔'+SRK[n.srk].match(/（(.+)）/)[1]+'〕':''}${tag?'　◀'+tag:''}`);
-    if (n.variation && n.normal) out.push(`      （ふだんは：${n.normal}）`);
+    if (n.variation && n.normal) out.push(`      （決まり・想定では：${n.normal}）`);
+    if (n.actual) out.push(`      （現場で実際は：${n.actual}）`);
   });
   const bk = S.edges.filter(e => e.brk && nodeById(e.from) && nodeById(e.to));
   if (bk.length){ out.push('  ブレイク（流れを断てた所）'); bk.forEach(e => out.push(`    ${nodeById(e.from).text} → ${nodeById(e.to).text}`)); }
@@ -1094,15 +1129,19 @@ function reportText(){
   const lv = leaves();
   out.push('', '4 要因の分類（m-SHELLモデル）');
   Object.entries(SHELL).forEach(([k,v]) => { const a = S.whys.filter(w => w.shell===k).length, r = lv.filter(w => w.shell===k).length; if (a) out.push(`  ${v.name}：${a}件（うち根本要因 ${r}件）`); });
+  const gr = (S.goright || []).filter(g => g.text);
+  if (gr.length){ out.push('', '  ふだんうまくいっている理由（Safety-II）'); gr.forEach(g => out.push(`    ・${g.text}`)); }
   out.push('', '5 再発防止対策');
   [...S.measures].sort((a,b) => prio(b) - prio(a)).forEach(x => {
     const w = S.whys.find(y => y.id === x.whyId);
     out.push(`  対策${msNo(x)}　${x.text}`);
     out.push(`    対象要因：${w?.text||''}`);
+    if (x.check) out.push(`    効果の確かめ方：${x.check}${x.checker ? '（確認：' + x.checker + '）' : ''}`);
     out.push(`    発想：${KONO[+x.kono]}　種類：${levelOf(x.level).label}（強さ：${STRENGTH[levelOf(x.level).s]}）　優先度：${prio(x)}（効果${x.eff}×実現性${x.feas}）${x.owner?'　担当：'+x.owner:''}${x.due?'　期限：'+x.due:''}`);
   });
   const none = lv.filter(w => !S.measures.some(x => x.whyId === w.id));
   if (none.length){ out.push('', '  ※対策未設定の根本要因'); none.forEach(w => out.push(`    ・${w.text}`)); }
+  if (S.meta.care) out.push('', '6 関係者への配慮', '  ' + S.meta.care);
   return out.join('\n');
 }
 function renderReport(){
@@ -1151,6 +1190,16 @@ function renderGuide(){
       <ul>${Object.entries(ERR).filter(([k]) => k).map(([,v]) => `<li>${v}</li>`).join('')}</ul>
       <p>Rasmussenは行動を、慣れた操作を無意識に行う<b>技能ベース</b>、手順や経験則に当てはめる<b>規則ベース</b>、初めての状況で考えて判断する<b>知識ベース</b>の3段階に分けました。スリップ・ラプスは技能ベース、ミステイクは規則・知識ベースで起きやすくなります。乗り慣れた旧型車の感覚で新型車を運転する場面は、規則ベースの当てはめ違いの典型です。</p>
       <p class="src">Reason, Human Error (1990)／Rasmussen (1983)</p></article>
+    <article class="card"><h3>最新の考え方（2010年代以降）</h3>
+      <ul>
+        <li><b>Safety-II</b>（EUROCONTROL, 2013）：失敗を減らすだけでなく、ふだんなぜうまくいっているかに学ぶ。決まり上の作業（Work-as-imagined）と現場の実際（Work-as-done）の差に目を向ける。→ VTAの「現場で実際は」、要因整理の「うまくいっている理由」</li>
+        <li><b>ローカル合理性</b>：その時その人には、なぜその行動が筋の通ったものに見えたのかを問う。→ なぜなぜの質問</li>
+        <li><b>CAST</b>（MIT・Leveson, 2019）：一人の誤りではなく、安全を確かめる仕組み（指揮・組織・メーカーなど）が、なぜ働かなかったのかを調べる。各立場が状況をどう認識していたかを問う。→ なぜなぜの質問、ブレイクの分析</li>
+        <li><b>HFACS 8.0</b>（米国国防総省, 2023）：行為・前提条件・監督・組織の影響の4階層で調べる。非難を避けるため「違反」を「逸脱」と呼ぶ。→ 要因整理の階層、エラーの種類</li>
+        <li><b>PSIRF と SEIPS</b>（NHS England, 2022）：従来の根本原因分析から、システムに注目した学習のための対応へ。書面より聞き取りを重視し、当事者を加える。→ 事案概要の進め方</li>
+        <li><b>RCA²</b>（NPSF/IHI, 2015）：対策ごとに、効果を何で・いつ測るかと、確かめる人を決める。→ 対策の「効果の確かめ方」</li>
+        <li><b>修復的な公正な文化</b>（Dekker；Mersey Care NHS, 2016〜）：誰が傷ついたか、何が必要か、誰がそれを満たすかを問う。→ 事案概要の「関係者への配慮」</li>
+      </ul></article>
     <article class="card"><h3>海外の一次資料との対応</h3>
       <div class="tablewrap"><table class="terms"><thead><tr><th>このツールの機能</th><th>拠りどころ</th></tr></thead><tbody>
         <tr><td>VTA・SRK</td><td>Leplat & Rasmussen (1984), Accident Analysis & Prevention</td></tr>
@@ -1159,6 +1208,10 @@ function renderGuide(){
         <tr><td>エラーと違反の種類</td><td>英国HSE「HSG48 Reducing error and influencing behaviour」、Reason (1990)</td></tr>
         <tr><td>直接・背後・根本の原因、責任追及をしない</td><td>英国HSE「HSG245 Investigating accidents and incidents」</td></tr>
         <tr><td>6つの観点</td><td>SHELLモデル（Edwards 1972, Hawkins 1975）。m（管理）は日本での拡張</td></tr>
+        <tr><td>要因の階層</td><td>DoD HFACS 8.0 (2023)、NHS England PSIRF / SEIPS (2022)</td></tr>
+        <tr><td>現場の実際・うまくいっている理由</td><td>EUROCONTROL「From Safety-I to Safety-II」(2013)</td></tr>
+        <tr><td>安全を確かめる仕組みの分析</td><td>Leveson「CAST Handbook」(MIT, 2019)</td></tr>
+        <tr><td>関係者への配慮</td><td>Dekker「Restorative Just Culture」、Mersey Care NHS</td></tr>
       </tbody></table></div></article>
     <article class="card"><h3>スイスチーズモデル</h3>
       <p>組織・規則・装備などの防護層にはそれぞれ穴（弱点）があり、穴が一直線に並んだときに事故が起きます。現場の当事者の行為は<b>即発的エラー</b>、組織や規則に潜む弱点は<b>潜在的条件</b>と呼ばれ、再発防止では潜在的条件の穴をふさぐことが重視されます。</p>
@@ -1218,7 +1271,7 @@ document.addEventListener('click', e => {
       if (!text){ toast('内容を入力してください'); $('#f-text').focus(); return; }
       let n = nodeById(ui.sel);
       if (!n){ n = {id:uid('n')}; S.nodes.push(n); }
-      Object.assign(n, {lane:$('#f-lane').value, seq:+$('#f-seq').value || 0, time:$('#f-time').value.trim(), kind:$('#f-kind').value, text, normal:$('#f-normal').value.trim(), srk:$('#f-srk').value, variation:$('#f-var').checked || $('#f-elim').checked, elim:$('#f-elim').checked, note:$('#f-note').value});
+      Object.assign(n, {lane:$('#f-lane').value, seq:+$('#f-seq').value || 0, time:$('#f-time').value.trim(), kind:$('#f-kind').value, text, normal:$('#f-normal').value.trim(), actual:$('#f-actual').value.trim(), srk:$('#f-srk').value, variation:$('#f-var').checked || $('#f-elim').checked, elim:$('#f-elim').checked, note:$('#f-note').value});
       const preds = [...document.querySelectorAll('.f-pred:checked')].map(x => x.value);
       const old = S.edges.filter(x => x.to === n.id);
       S.edges = S.edges.filter(x => x.to !== n.id).concat(preds.map(p => ({from:p, to:n.id, brk:!!old.find(o => o.from === p)?.brk})));
@@ -1253,6 +1306,8 @@ document.addEventListener('click', e => {
     case 'ms-add': { const m = {id:uid('m'), whyId:id, text:'', kono:0, level:'policy', eff:2, feas:2, owner:'', due:''}; S.measures.push(m); save(); render(); $('#ms-text-'+m.id)?.focus(); break; }
     case 'ms-sugg': { const w = S.whys.find(x => x.id === id), x = w && suggestionsFor(w).find(y => y[0] === a.dataset.text); if (!x) return;
       const m = {id:uid('m'), whyId:id, text:x[0], kono:x[1], level:x[2], eff:2, feas:2, owner:'', due:''}; S.measures.push(m); save(); render(); $('#ms-text-'+m.id)?.focus(); break; }
+    case 'gr-add': { S.goright = S.goright || []; const g = {id:uid('g'), text:''}; S.goright.push(g); save(); render(); $('#gr-'+g.id)?.focus(); break; }
+    case 'gr-del': S.goright = (S.goright || []).filter(g => g.id !== id); save(); render(); break;
     case 'ms-del': S.measures = S.measures.filter(m => m.id !== id); save(); render(); break;
     case 'copy-report': copyText($('#report-text').value, $('#report-text')); break;
     case 'open-data': { $('#json-out').value = JSON.stringify(S, null, 2); $('#json-in').value = ''; $('#json-file').value = ''; const d = $('#dlg-data'); d.showModal ? d.showModal() : d.setAttribute('open',''); break; }
@@ -1351,6 +1406,7 @@ document.addEventListener('input', e => {
     if (t.dataset.field === 'text'){ const l = t.parentElement.querySelector('.lint'); if (l){ const m = whyLint(t.value, !S.whys.some(x => x.parentId === w.id), w.err); l.innerHTML = m.join('<br>'); l.hidden = !m.length; } } return; }
   if (t.dataset.ms){ const m = S.measures.find(x => x.id === t.dataset.ms); if (!m) return; const f = t.dataset.field; m[f] = (f==='eff'||f==='feas'||f==='kono') ? +t.value : t.value; save(); return; }
   if (t.dataset.lane){ const l = S.lanes.find(x => x.id === t.dataset.lane); if (l){ l.name = t.value; save(); } }
+  if (t.dataset.gr){ const g = (S.goright || []).find(x => x.id === t.dataset.gr); if (g){ g.text = t.value; save(); } }
 });
 document.addEventListener('change', e => {
   const t = e.target;

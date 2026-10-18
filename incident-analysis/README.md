@@ -19,7 +19,12 @@
 | なぜなぜの書き方 | 小倉仁志『なぜなぜ分析10則』; 米国VA NCPS「Five Rules of Causation」 |
 | 対策の強さ | NPSF/IHI「RCA²」Action Hierarchy (2015) |
 | エラー・違反の種類 | 英国HSE HSG48; Reason (1990) |
-| 調査の進め方 | 英国HSE HSG245 |
+| 調査の進め方 | 英国HSE HSG245; NHS England PSIRF / SEIPS (2022) |
+| 要因の階層 | 米国国防総省 HFACS 8.0 (2023) |
+| 現場の実際・うまくいっている理由 | EUROCONTROL「From Safety-I to Safety-II」(2013) |
+| 安全を確かめる仕組みの分析 | Leveson「CAST Handbook」(MIT, 2019) |
+| 対策の効果測定 | NPSF/IHI RCA² (2015) |
+| 関係者への配慮 | Dekker「Restorative Just Culture」; Mersey Care NHS |
 
 ## 工程
 
