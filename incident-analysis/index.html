@@ -531,7 +531,26 @@ const childrenOf = id => S.whys.filter(w => w.parentId === id);
 const leaves = () => S.whys.filter(w => !S.whys.some(x => x.parentId === w.id));
 function depthOf(w){ let d = 1, p = w; while (p.parentId){ p = S.whys.find(x => x.id === p.parentId); if (!p) break; d++; } return d; }
 function chainUp(w){ const a = [w]; let p = w; while (p.parentId){ p = S.whys.find(x => x.id === p.parentId); if (!p) break; a.push(p); } return a; }
-const targets = () => S.nodes.filter(n => n.variation || n.elim).sort((a,b) => (b.elim - a.elim) || (a.seq - b.seq));
+/* ブレイク（矢印）も「なぜ流れを断てなかったか」の分析対象にする */
+function brkTarget(e){
+  const a = nodeById(e.from), b = nodeById(e.to); if (!a || !b) return null;
+  return {id:'brk:'+e.from+'>'+e.to, isBrk:true, lane:b.lane, seq:b.seq, time:'', kind:'brk', normal:'', elim:false, variation:false,
+    text:`「${a.text}」から「${b.text}」への流れを断てなかった`};
+}
+const targetById = id => id && id.startsWith('brk:') ? brkTarget(S.edges.find(e => 'brk:'+e.from+'>'+e.to === id) || {}) : nodeById(id);
+const tRank = t => t.elim ? 0 : t.isBrk ? 1 : 2;
+const targets = () => [...S.nodes.filter(n => n.variation || n.elim), ...S.edges.filter(e => e.brk).map(brkTarget).filter(Boolean)]
+  .sort((a,b) => (tRank(a) - tRank(b)) || (a.seq - b.seq));
+const ABSTRACT = /不十分|不適切|不備|悪かった|悪い|甘かった|甘い|欠如|問題があった|ずさん|不徹底/;
+const PSYCH = /思った|思い込|うっかり|勘違い|忘れ|気づかなかった|気付かなかった|慌て|焦っ|焦り|油断|慢心/;
+function whyLint(text, isLeaf){
+  const m = [];
+  if (BLAME.test(text)) m.push(blameMsg());
+  else if (ABSTRACT.test(text)) m.push('「不十分」「不適切」などの抽象的な言葉は、誰が読んでも同じ意味になるよう、何がどうだったのかを具体的に書き換えます（例：「訓練が不十分」→「訓練にカーブ走行の項目がない」）。');
+  if (isLeaf && PSYCH.test(text)) m.push('「思い込んだ」「焦った」などの心の動きで止めると、対策が「気をつける」になります。何がそう思わせたのか（表示・手順・状況）を、さらに掘り下げます。');
+  if (/。\s*\S/.test(text) || /また、|さらに、/.test(text)) m.push('1つの欄に要因が2つ以上入っていませんか。分けられるなら「並列の要因」で別の欄にします（1つの欄に1つの事柄）。');
+  return m;
+}
 const nextSeq = () => S.nodes.reduce((m,n) => Math.max(m, +n.seq || 0), 0) + 1;
 const prio = m => (+m.eff || 0) * (+m.feas || 0);
 const msNo = m => S.measures.indexOf(m) + 1;
@@ -542,7 +561,7 @@ function shellChip(k, fill){ return k ? `<span class="chip ${fill?'fill':''}" da
 const HOWTO = {
   overview:['起きたことを、事実だけで書きます。「〜すべきだった」などの評価は書きません。','誰の責任かではなく、なぜ起きたかを明らかにするのが目的です。'],
   vta:() => [`まず「事故の瞬間」（種別：事故事象）を置き、時間をさかのぼって直前の行動・判断・状態を追加します。図では事故が${S.meta.dir === 'down' ? '一番下' : '一番上'}に来ます。`,'1つの四角には、起きた事実を「誰が・何をした」「何が・どうだった」の形で1つだけ書きます。','ふだんと違った点に「いつもと違った」（変動要因）、それがなければ事故にならなかった点に「排除ノード」の印を付けます。','誰か・何かが気づけば流れを断てた矢印をクリックし、「ブレイク」を付けます。下の「作図チェック」も確かめてください。'],
-  why:['左の一覧から排除ノード（○）を優先して選び、「なぜ？」を繰り返します。','行き詰まったら、下の「要因を見つける質問」を使ってください。観点ごとに要因を追加できます。','「注意する」以外の対策が思いつくところまで掘り下げたら、そこが根本要因です。'],
+  why:['左の一覧から排除ノード（○）とブレイク（┄）を選び、「なぜ？」を繰り返します。ブレイクでは「なぜ流れを断てなかったか」を考えます。','1つの欄には1つの事柄を、誰が読んでも同じ意味になる具体的な言葉で書きます。要因が複数あれば「並列の要因」で漏れなく挙げます。','現場・現物・記録で確かめたものは「事実」、まだのものは「推測」にします。','根本要因から「だから」で逆に読み、話がつながるか確かめます。「注意する」以外の対策が打てるところまで掘り下げます。'],
   factors:['この画面は自動で集計されます。入力は不要です。','要因が「本人」に偏っていたら、決まり・道具・組織の側に見落としがないか見直します。'],
   measures:['根本要因ごとに対策を考えます。「対策の候補」から選び、自分たちの状況に合わせて書き換えるのが早道です。','「注意する」「徹底する」だけの対策は長続きしません。仕組みで防ぐ対策を優先します。'],
   report:['コピーして、所属の様式に貼り付けてください。']
@@ -765,17 +784,19 @@ function whyItem(w, depth){
   const kids = childrenOf(w.id);
   const showErr = w.shell === 'L' || w.shell === 'LL';
   const chain = chainUp(w);
-  const node = nodeById(w.nodeId);
+  const node = targetById(w.nodeId);
   return `<li><div class="why-card" data-shell="${w.shell}">
     <div class="why-head">
       <span class="why-no">なぜ${depth}</span>
       <select id="ws-${w.id}" data-why="${w.id}" data-field="shell" aria-label="m-SHELL分類">${Object.entries(SHELL).map(([k,v]) => `<option value="${k}" ${k===w.shell?'selected':''}>${v.label}（${v.term}）</option>`).join('')}</select>
+      <select id="wf-${w.id}" data-why="${w.id}" data-field="fact" aria-label="事実か推測か"><option value="" ${!w.fact?'selected':''}>事実か推測か：未確認</option><option value="fact" ${w.fact==='fact'?'selected':''}>事実（現場・現物・記録で確認）</option><option value="guess" ${w.fact==='guess'?'selected':''}>推測（要確認）</option></select>
       ${showErr?`<select id="we-${w.id}" data-why="${w.id}" data-field="err" aria-label="エラーの型">${Object.entries(ERR).map(([k,v]) => `<option value="${k}" ${k===w.err?'selected':''}>${v}</option>`).join('')}</select>`:''}
     </div>
     <textarea id="wt-${w.id}" data-why="${w.id}" data-field="text" rows="2" placeholder="なぜそうなったのか（事実に基づいて）" aria-label="要因">${esc(w.text)}</textarea>
-    <div class="lint" ${BLAME.test(w.text)?'':'hidden'}>${blameMsg()}</div>
+    ${(() => { const m = whyLint(w.text, !kids.length); return `<div class="lint" ${m.length?'':'hidden'}>${m.join('<br>')}</div>`; })()}
     ${kids.length ? '' : `<div class="rootcause"><span class="rc">根本要因として扱います${S.measures.some(m => m.whyId===w.id)?'（対策あり）':'（対策未設定）'}</span>
       ${depth < 3 ? '<span>まだ浅いかもしれません。規則・教育・装備・体制など、仕組みのレベルに届くまで掘り下げましょう。</span>' : ''}
+      ${showErr ? '<span>本人・周りの人の要因で止まっています。その行動を生んだ決まり・道具・環境・組織の側の要因がないか確かめます。</span>' : ''}
       <details><summary>逆読み確認（「だから」でつながるか）</summary><div class="dakara">${chain.map(c => esc(c.text||'（未入力）')).join(' <b>だから</b> ')} <b>だから</b> ${esc(node?.text||'')}</div></details></div>`}
     <div class="why-actions">
       <button class="btn sm" data-act="why-child" data-id="${w.id}">＋ さらに、なぜ？</button>
@@ -787,7 +808,7 @@ function whyItem(w, depth){
 function renderWhy(){
   const ts = targets();
   if (!ui.target || !ts.some(t => t.id === ui.target)) ui.target = ts[0]?.id || null;
-  const n = nodeById(ui.target);
+  const n = targetById(ui.target);
   const roots = n ? S.whys.filter(w => w.nodeId === n.id && !w.parentId) : [];
   return `
   <div class="sec-head"><div><h2>なぜなぜ分析</h2>
@@ -797,19 +818,19 @@ function renderWhy(){
     <aside class="targets" aria-label="分析対象">
       ${ts.length ? ts.map(t => { const c = S.whys.filter(w => w.nodeId === t.id).length;
         return `<button class="target" aria-pressed="${t.id===ui.target}" data-act="sel-target" data-id="${t.id}">
-          <span class="t-meta">${t.elim?'<span class="chip elim">○ 排除ノード</span>':''}${t.variation?'<span class="chip var">いつもと違う</span>':''}<span class="mono">#${t.seq}</span>${esc(laneName(t.lane))}</span>
+          <span class="t-meta">${t.isBrk?'<span class="chip elim">┄ ブレイク</span>':''}${t.elim?'<span class="chip elim">○ 排除ノード</span>':''}${t.variation?'<span class="chip var">いつもと違う</span>':''}<span class="mono">#${t.seq}</span>${esc(laneName(t.lane))}</span>
           <span class="t-text">${esc(t.text)}</span>
           <span class="t-meta">${c ? `なぜ ${c} 件` : '<span class="chip warn">未分析</span>'}</span></button>`; }).join('')
         : `<div class="card small muted">VTAの画面で「いつもと違った」か「排除ノード」の印を付けると、ここに並びます。</div>`}
     </aside>
     <section class="card">
       ${n ? `<div class="focus-node">
-          <span class="t-meta small muted">${esc(laneName(n.lane))} ／ ${KINDS[n.kind]} ／ #${n.seq} ${esc(n.time)}</span>
-          <div class="q">${esc(n.text)}　──なぜ？</div>
+          <span class="t-meta small muted">${esc(laneName(n.lane))} ／ ${n.isBrk ? 'ブレイク（流れを断てた所）' : KINDS[n.kind]} ／ #${n.seq} ${esc(n.time)}</span>
+          <div class="q">${esc(n.text)}　──${n.isBrk ? 'なぜ止められなかった？' : 'なぜ？'}</div>
           ${n.normal ? `<span class="small muted">ふだんは：${esc(n.normal)}</span>` : ''}
         </div>
         <ol class="tree">${roots.map(w => whyItem(w, 1)).join('')}</ol>
-        <div style="margin-top:14px"><button class="btn primary" data-act="why-root">＋ 直接の要因を追加</button></div>
+        <div style="margin-top:14px" class="btnrow"><button class="btn primary" data-act="why-root">＋ 直接の要因を追加</button><span class="small muted" style="align-self:center">最初の「なぜ」は、この出来事を直接引き起こした要因から書きます。</span></div>
         <details class="hints" ${roots.length ? '' : 'open'}><summary>要因を見つける質問（観点ごとに要因を追加できます）</summary>
           <div class="hint-grid">${Object.entries(SHELL).map(([k,v]) => `<div class="hint" data-shell="${k}"><b>${v.name}</b><ul>${v.q.map(q => `<li>${q}</li>`).join('')}</ul><button class="btn sm" data-act="why-root" data-shell="${k}">この観点で要因を追加</button></div>`).join('')}</div>
           <div class="errguide"><b>エラーの種類の見分け方</b>（本人・周りの人の要因に付けます）
@@ -820,7 +841,32 @@ function renderWhy(){
         </details>`
         : `<p class="muted">左の一覧から分析対象を選んでください。</p>`}
     </section>
-  </div>`;
+  </div>
+  ${whyChecksHTML()}`;
+}
+function whyChecksHTML(){
+  const c = whyChecks(); return `<section class="card" id="why-checks" style="margin-top:16px"><h3>分析チェック</h3>
+    <p class="small muted" style="margin-top:4px">なぜなぜ分析の基本ルールに沿っているかを自動で確かめます。項目をクリックすると、その分析対象を開きます。</p>
+    <div class="checks">${c.length ? c.map(x => `<button class="${x.lv}" data-act="sel-target" data-id="${x.id}"><span class="ic">${x.lv==='warn'?'要確認':'参考'}</span><span>${esc(x.msg)}</span></button>`).join('') : '<span class="chip ok" style="align-self:flex-start">問題は見つかりませんでした</span>'}</div></section>`;
+}
+function whyChecks(){
+  const out = [], q = t => { const x = t.length > 22 ? t.slice(0,22) + '…' : t; return t.startsWith('「') ? x : '「' + x + '」'; };
+  targets().forEach(t => {
+    const ws = S.whys.filter(w => w.nodeId === t.id), roots = ws.filter(w => !w.parentId);
+    if (!ws.length){ if (t.elim) out.push({lv:'warn', id:t.id, msg:`排除ノード${q(t.text)}のなぜなぜがまだありません。`});
+      else if (t.isBrk) out.push({lv:'info', id:t.id, msg:`ブレイク${q(t.text)}について、なぜ流れを断てなかったかがまだ分析されていません。`}); return; }
+    if (roots.length === 1) out.push({lv:'info', id:t.id, msg:`${q(t.text)}の直接の要因が1つだけです。それだけで起きたと言えるか確かめ、足りなければ並列の要因を漏れなく挙げます。`});
+    const lv = ws.filter(w => !S.whys.some(x => x.parentId === w.id));
+    if (lv.length && lv.every(w => w.shell === 'L' || w.shell === 'LL')) out.push({lv:'warn', id:t.id, msg:`${q(t.text)}の根本要因が本人・周りの人だけです。決まり・道具・環境・組織の側も確かめます。`});
+  });
+  S.whys.forEach(w => {
+    const leaf = !S.whys.some(x => x.parentId === w.id), d = depthOf(w);
+    if (!w.text.trim()){ out.push({lv:'warn', id:w.nodeId, msg:'内容が空の要因があります。'}); return; }
+    if (whyLint(w.text, leaf).length) out.push({lv:'warn', id:w.nodeId, msg:`${q(w.text)}：書き方の見直しが必要です（カード内の注意を参照）。`});
+    if (w.fact === 'guess') out.push({lv:'info', id:w.nodeId, msg:`${q(w.text)}は推測です。現場・現物・記録で確かめてから対策を決めます。`});
+    if (leaf && d < 3) out.push({lv:'info', id:w.nodeId, msg:`${q(w.text)}で掘り下げが止まっています（なぜ${d}）。対策が打てる仕組みに届いているか確かめます。`});
+  });
+  return out;
 }
 
 /* ---------- 4 factors ---------- */
@@ -885,7 +931,7 @@ function renderFactors(){
   <section class="card" style="margin-top:16px"><h3>スイスチーズモデル（根本要因の分布）</h3><p class="small muted" style="margin:4px 0 10px">組織・規則・装備・環境の穴（潜在的な条件）が重なったところに、当事者の行為（即発的エラー）が加わって事故に至ります。</p><div class="figure">${swiss(rc)}</div></section>
   <section class="card" style="margin-top:16px"><h3>根本要因の一覧</h3>
     <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th>分類</th><th>根本要因</th><th>由来のノード</th><th>対策</th></tr></thead><tbody>
-    ${lv.length ? lv.map(w => { const n = nodeById(w.nodeId), c = S.measures.filter(m => m.whyId === w.id).length;
+    ${lv.length ? lv.map(w => { const n = targetById(w.nodeId), c = S.measures.filter(m => m.whyId === w.id).length;
       return `<tr><td>${shellChip(w.shell)}</td><td>${esc(w.text)}</td><td class="small muted">${esc(n?.text||'')}</td><td>${c?`<span class="chip ok">${c} 件</span>`:'<span class="chip warn">未設定</span>'}</td></tr>`; }).join('')
       : '<tr><td colspan="4" class="muted">まだ根本要因がありません。</td></tr>'}
     </tbody></table></div></section>`;
@@ -946,7 +992,7 @@ function renderMeasures(){
       <div class="kono"><span class="g">発生防止</span>${KONO.slice(0,8).map((k,i) => konoCell(k,i)).join('')}<span class="g">拡大防止</span>${KONO.slice(8).map((k,i) => konoCell(k,i+8)).join('')}</div></section>
   </div>
   <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px">
-  ${lv.length ? lv.map(w => { const ms = S.measures.filter(m => m.whyId === w.id), n = nodeById(w.nodeId);
+  ${lv.length ? lv.map(w => { const ms = S.measures.filter(m => m.whyId === w.id), n = targetById(w.nodeId);
     return `<section class="card cause-card">
       <div class="cause-head">${shellChip(w.shell, true)}<span class="cause-text">${esc(w.text || '（未入力）')}</span>${ms.length?'':'<span class="chip warn">対策未設定</span>'}</div>
       <div class="small muted">由来：${esc(n?.text||'')}</div>
@@ -979,7 +1025,7 @@ function reportText(){
   targets().forEach(n => {
     const roots = S.whys.filter(w => w.nodeId === n.id && !w.parentId); if (!roots.length) return;
     out.push(`  ◆ ${n.text}`);
-    const walk = (w, d) => { out.push(`${'    '.repeat(d)}なぜ${d}：${w.text}〔${SHELL[w.shell].name}${w.err?'／'+ERR_SHORT[w.err]:''}〕`); childrenOf(w.id).forEach(c => walk(c, d+1)); };
+    const walk = (w, d) => { out.push(`${'    '.repeat(d)}なぜ${d}：${w.text}${w.fact==='guess'?'（推測・要確認）':''}〔${SHELL[w.shell].name}${w.err?'／'+ERR_SHORT[w.err]:''}〕`); childrenOf(w.id).forEach(c => walk(c, d+1)); };
     roots.forEach(r => walk(r, 1));
   });
   const lv = leaves();
@@ -1028,7 +1074,8 @@ function renderGuide(){
       <p>記号の細部（○や破線の位置、時間の向き）は資料や組織によって違います。所属の様式があれば、それに合わせてください。</p>
       <p class="src">Leplat & Rasmussen (1984)。JAXA「ヒューマンファクタ分析ハンドブック」(JERG-0-018A)、日本財団「ヒューマンファクター概念に基づく海難・危険情報の調査活用等に関する調査研究」ほか。</p></article>
     <article class="card"><h3>なぜなぜ分析の約束ごと</h3>
-      <ul><li>事実から出発し、推測には推測と書く</li><li>「注意不足」「確認不足」で止めない。なぜ注意が向かなかったのかを問う</li><li>個人の資質で終わらせず、規則・教育・装備・体制まで掘り下げる</li><li>要因が複数あれば枝分かれさせる</li><li>根本要因から「だから」で逆に読み、論理がつながるか確かめる</li><li>対策が打てる単位まで来たら止める</li></ul></article>
+      <ol><li>1つの欄には、主語を1つにして1つの事柄を書く</li><li>最初の「なぜ」は、出来事を直接引き起こした要因から考える</li><li>要因が複数あれば、並列に漏れなく挙げる</li><li>誰が読んでも同じ意味になる具体的な言葉を使う（「不十分」「不適切」で済ませない）</li><li>「思い込み」「焦り」など心の動きで止めず、そうさせた状況を掘り下げる</li><li>「やらなかった」のか「やって間違えた」のかを区別する</li><li>根本要因から「だから」で逆に読み、話の飛躍がないか確かめる</li><li>現場・現物・記録で事実を確かめ、推測は推測と明記する</li><li>再発防止策が打てる要因まで掘り下げる</li><li>「なぜ起きたか」（発生）と「なぜ止められなかったか」（流出）の両方を分析する</li></ol>
+      <p class="src">小倉仁志『なぜなぜ分析10則』（日科技連出版社, 2009）、同「なぜなぜ分析の10則」（マネジメント・ダイナミクス）ほか。発生と流出の2系統は製造業の品質管理での一般的な進め方。</p></article>
     <article class="card"><h3>m-SHELLモデル</h3>
       <p>中央の人間（L）と、それを取り巻く要素との接点で不具合が起きると考えるモデルです。</p>
       <ul>${Object.entries(SHELL).map(([k,v]) => `<li><b>${v.name}</b>：${v.desc}</li>`).join('')}</ul>
@@ -1159,7 +1206,7 @@ document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.meta){ S.meta[t.dataset.meta] = t.value; save(); if (t.dataset.meta === 'title') $('#case-title').textContent = t.value || '事案名が未入力です'; return; }
   if (t.dataset.why){ const w = S.whys.find(x => x.id === t.dataset.why); if (!w) return; w[t.dataset.field] = t.value; save();
-    if (t.dataset.field === 'text'){ const l = t.parentElement.querySelector('.lint'); if (l) l.hidden = !BLAME.test(t.value); } return; }
+    if (t.dataset.field === 'text'){ const l = t.parentElement.querySelector('.lint'); if (l){ const m = whyLint(t.value, !S.whys.some(x => x.parentId === w.id)); l.innerHTML = m.join('<br>'); l.hidden = !m.length; } } return; }
   if (t.dataset.ms){ const m = S.measures.find(x => x.id === t.dataset.ms); if (!m) return; const f = t.dataset.field; m[f] = (f==='eff'||f==='feas'||f==='kono') ? +t.value : t.value; save(); return; }
   if (t.dataset.lane){ const l = S.lanes.find(x => x.id === t.dataset.lane); if (l){ l.name = t.value; save(); } }
 });
@@ -1167,6 +1214,7 @@ document.addEventListener('change', e => {
   const t = e.target;
   if (t.tagName === 'SELECT' && (t.dataset.why || t.dataset.ms)) render();
   if (t.dataset.lane) render();
+  if (t.tagName === 'TEXTAREA' && t.dataset.why){ const el = $('#why-checks'); if (el) el.outerHTML = whyChecksHTML(); }
 });
 
 render();
