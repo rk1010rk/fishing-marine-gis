@@ -929,6 +929,7 @@ v3 の DB 実装と確認（2026-10-06 の記録）
 - 保留: `shared_prefs/emergency_notification.xml` がある。中身を記録し、書かれた理由を確かめる。ファイルがあることだけで、初期化の失敗とは判定しない
 - 保留: 表が無い、`lock_rules` が1行でない、など上のどれにも当てはまらない
 - コードを読んだ範囲の推測（実機では未確認）: DB は、アプリのプロセスが起動した直後に開かれる（`TaskLockApp` で作るリポジトリの `blockSnapshot` が `SharingStarted.Eagerly` で DB を読む）。そのため F2-6 の後には DB がある見込み。`emergency_notification` はユーザー補助のサービスだけが書くため、F2-8a の前には無い見込み
+- （2026-10-20 追記）F2-7 の DB の確認方法: F2-6 の確認・記録後に `f2bak.sh` を実行し、ファイル一覧と表ごとの行数を確認する。`tasklock.db` が存在せず STOP した場合は、スクリプトの異常と即断せず、F-2 の判定基準「保留: DB が無い」に従って扱う
 
 **注意**
 - アプリを止める操作（force-stop）はしない（§10 G の G-D 1回目で、`force-stop` の後にユーザー補助の有効の一覧から外れていたため）
@@ -950,6 +951,31 @@ v3 の DB 実装と確認（2026-10-06 の記録）
 - 未確認: フォルダが無いときに `exit=1` が返ること。shared_prefs がある間は、当日も確かめられない
 - （2026-10-19 追記）この確認の後、`f2bak.sh` を直し、`test -d` は使わなくなった。代わりに `run-as … ls -1 .`（アプリのフォルダの一覧）で shared_prefs の有無を判断する。同日に実機で `ls -1 .` を実行し、`cache`・`code_cache`・`databases`・`files`・`shared_prefs` の5行が出た（`f2bak.sh` は実機では実行していない）
 - `files/`・`cache/`・`code_cache/` はバックアップの対象外。コード検索では `filesDir`、`cacheDir`、DataStore、`openFileOutput` の使用を確認できなかったが、中身は未確認
+
+#### F-2 のバックアップの実機での動作確認（2026-10-20）
+- 区分: `f2bak.sh` が実機で動くかを確かめるための実行。F2-1・F2-2（テストの当日、アンインストールの直前のバックアップ）ではなく、F-2 の判定には使わない。テストの当日には改めて実行する
+- 日時: 2026-10-20 22:31:52〜22:32:00（JST。Chromebook の時刻。端末の時刻は 22:31:56）
+- 端末と版: §10 W と同じ端末（Pixel 9a）。USB デバッグで接続した。APK の SHA-256 は run #56 の `5db65ee2…` と一致（`firstInstallTime` 2026-09-27 21:33:04、`lastUpdateTime` 2026-10-11 20:46:22）
+- スクリプト: main（`f6980f7`）の `tasklock-android/scripts/f2bak.sh` を Chromebook に置き、SHA-256 が `115b7dc4cc3f2153a8fa3db614c1b396e6fda625ff6d1bd413af3c13bff8e1d9` と一致することを確かめてから実行した
+- 行わなかったこと: アンインストール、再インストール、アプリへの復元、アプリの停止、設定の変更
+
+| 確認 | 結果 |
+|---|---|
+| 端末の数 | 1台 |
+| 対象のファイル | `databases/tasklock.db`・`-shm`・`-wal`、`shared_prefs/emergency_notification.xml` の4個。想定外のファイルは無かった |
+| ファイルの一覧 | コピーの前と後で同じ |
+| SHA-256 | 4個すべてで、コピーの前（端末）・手元・コピーの後（端末）が一致 |
+| SQLite | 作業用の複製を読み取り専用で開き、`PRAGMA integrity_check` は `ok`（Chromebook の SQLite 3.46.1、journal_mode は wal） |
+| 元のコピー | 検証の後も4個の SHA-256 は変わっていない |
+| 表の行数 | tasks 2、completions 8、verifications 9、locked_apps 2、unlock_grants 8、temporary_unlocks 5、emergency_stops 5、emergency_stop_apps 10、lock_rules 1（下の注を参照） |
+
+- 表の行数の注: この時点の観測値で、F2-7 で比べるときの参考値。F-2 の合格条件ではない。件数（たとえば `temporary_unlocks` の件数）は、アプリの全状態を表すものではない
+- 結果: STOP は出ずに完了した。上の事前確認で未確認とした3つ（`run-as … ls -1 shared_prefs`、`exec-out run-as … cat` でファイルが変わらずにコピーできること、Chromebook の python3 で作業用の複製を `mode=ro` で開けること）は、この実行で確かめられた
+- 限界: SHA-256 の照合は「コピーの間に内容が変わらなかった」ことの確認で、SQLite の一貫したスナップショットを保証するものではない
+- 未確認: フォルダが無いときの終了コード（shared_prefs があったため、確かめられていない）
+- 観察: `tasklock.db` の SHA-256 は、上の事前確認（2026-10-19）の値と同じだった。これは `tasklock.db` 単体のファイルが同じだったことを示すだけで、`-wal` を含むデータ全体が変わっていないことは示さない
+- 実行中のアプリ操作の有無は未確認
+- バックアップの保存先と中身は、ここには書かない（手元の Chromebook にだけ保管する）
 
 ### G. 監査対応の確認（チェックA〜I）
 監査で直した箇所を実機で確認する。「`:core` テスト」列は同じ論理をJVMで確認済みのテストで、実機での挙動を保証するものではない。
